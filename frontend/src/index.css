@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-ink: #172026;
+  --c-paper: #FFFFFF;
+  --c-card: #FFFFFF;
+  --c-card-tint: #FBFAF9;
+  --c-cream: #EAE2B7;
+  --c-rule: #E8E6E1;
+  --c-solid: #003049;
+  --c-solid-hover: #00243a;
+  --c-accent: #D62828;
+  --c-accent-deep: #A81F1F;
+  --c-accent-bright: #E96A18;
+  --c-accent-wash: #FBEBE9;
+  --c-gold: #FCBF49;
+  --c-sage: #2F8558;
+  --c-sage-bg: #E9F4EE;
+  --c-info: #0F3A5C;
+  --c-info-bg: #EAF0F4;
+  --c-warn: #8A6212;
+  --c-warn-bg: #FDF1E8;
+  --c-slate: #7C8493;
+  --c-slate-bg: #EAEBEE;
+  --c-ink2: #172026;
+  --c-text-dim: #6B7680;
+}
+
+[data-theme="dark"] {
+  --c-ink: #EDEFEE;
+  --c-paper: #14191C;
+  --c-card: #1B2124;
+  --c-card-tint: #20262A;
+  --c-cream: #2B2718;
+  --c-rule: #2A3236;
+  --c-solid: #24333E;
+  --c-solid-hover: #1B2830;
+  --c-accent: #E1544F;
+  --c-accent-deep: #C43B36;
+  --c-accent-bright: #F0894A;
+  --c-accent-wash: #2A1B19;
+  --c-gold: #F0C363;
+  --c-sage: #5CB889;
+  --c-sage-bg: #182620;
+  --c-info: #8FB9D6;
+  --c-info-bg: #1B2730;
+  --c-warn: #E0AC57;
+  --c-warn-bg: #2B2214;
+  --c-slate: #8D9AA0;
+  --c-slate-bg: #232A2D;
+  --c-ink2: #EDEFEE;
+  --c-text-dim: #8D9AA0;
+}
+
+body {
+  font-family: 'Manrope', sans-serif;
+  background: var(--c-paper);
+  color: var(--c-ink);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.font-display {
+  font-family: 'Sora', sans-serif;
+}
+
+.font-mono-brand {
+  font-family: 'Space Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 2px;
+  background: var(--c-accent-bright);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.nav-link:hover::after,
+.nav-link.active::after {
+  transform: scaleX(1);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--c-rule) 25%, var(--c-card-tint) 37%, var(--c-rule) 63%);
+  background-size: 800px 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

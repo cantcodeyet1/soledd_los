@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soledd LOS: WhatsApp Conversation Flows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1B2430;
+    --paper:#EDEEF0;
+    --card:#F7F6F3;
+    --rule:#D7D3C8;
+    --rule-soft:#E3E0D8;
+    --accent:#6F0F15;
+    --accent-wash:rgba(111,15,21,0.08);
+    --text:#232B36;
+    --text-dim:#5B6472;
+
+    --wa-header:#075E54;
+    --wa-bg:#E9E3DB;
+    --wa-out:#DCF8C6;
+    --wa-in:#FFFFFF;
+    --wa-tick:#34B7F1;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'IBM Plex Sans', sans-serif; background:var(--paper); color:var(--text); -webkit-font-smoothing:antialiased;}
+  svg.icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+
+  .app{display:grid; grid-template-columns:280px 1fr; min-height:100vh;}
+
+  /* ---------- Scenario panel ---------- */
+  .scenario-panel{background:var(--ink); color:#C7CDD8; padding:28px 20px; display:flex; flex-direction:column; gap:22px;}
+  .brand-mark{font-family:'Source Serif 4', serif; font-size:20px; font-weight:600; color:#fff;}
+  .brand-sub{font-size:11px; color:#C1454C; text-transform:uppercase; letter-spacing:1.2px; font-weight:500; margin-top:2px;}
+  .scenario-list{display:flex; flex-direction:column; gap:4px; margin-top:6px;}
+  button.scenario-item{
+    all:unset; box-sizing:border-box; display:flex; flex-direction:column; gap:2px;
+    padding:11px 12px; border-radius:6px; cursor:pointer; border-left:2px solid transparent;
+    font-family:inherit;
+  }
+  .scenario-item:hover{background:rgba(255,255,255,0.06);}
+  .scenario-item.active{background:rgba(193,69,76,0.14); border-left:2px solid #C1454C;}
+  .scenario-item .s-title{font-size:13.5px; color:#fff; font-weight:500;}
+  .scenario-item .s-sub{font-size:11px; color:#8B93A3;}
+  .panel-foot{margin-top:auto; font-size:11px; color:#4C5568; line-height:1.7; border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;}
+
+  /* ---------- Main ---------- */
+  main{padding:32px 40px 60px; display:grid; grid-template-columns:340px 1fr; gap:36px; align-items:start;}
+  .topbar-full{grid-column:1 / -1; margin-bottom:6px;}
+  .topbar-full h1{font-family:'Source Serif 4', serif; font-size:26px; font-weight:600; margin:0 0 4px;}
+  .topbar-full .meta{font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--text-dim);}
+
+  /* ---------- Phone frame ---------- */
+  .phone{
+    width:340px; background:#0B0B0B; border-radius:34px; padding:12px;
+    box-shadow:0 20px 40px rgba(0,0,0,0.18);
+  }
+  .phone-screen{background:var(--wa-bg); border-radius:24px; overflow:hidden; display:flex; flex-direction:column; height:600px;}
+  .wa-header{
+    background:var(--wa-header); color:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px;
+  }
+  .wa-avatar{
+    width:36px; height:36px; border-radius:50%; background:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-family:'Source Serif 4', serif; font-weight:600; font-size:14px;
+  }
+  .wa-who b{display:block; font-size:14px;}
+  .wa-who span{font-size:11px; opacity:0.85;}
+  .wa-body{flex:1; overflow-y:auto; padding:16px 12px; display:flex; flex-direction:column; gap:8px;}
+  .bubble{max-width:78%; padding:8px 10px 6px; border-radius:8px; font-size:13px; line-height:1.45; position:relative; opacity:0; transform:translateY(6px); animation:rise .28s ease forwards;}
+  @keyframes rise{to{opacity:1; transform:translateY(0);}}
+  .bubble.bot{align-self:flex-start; background:var(--wa-in); border-top-left-radius:2px;}
+  .bubble.user{align-self:flex-end; background:var(--wa-out); border-top-right-radius:2px;}
+  .bubble .btime{display:flex; justify-content:flex-end; align-items:center; gap:4px; font-size:10px; color:#7A8A7A; margin-top:3px;}
+  .bubble.bot .btime{color:#8A8F8A;}
+  .tick{color:var(--wa-tick);}
+  .doc-chip{display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.04); border-radius:6px; padding:8px; margin-bottom:2px;}
+  .doc-chip svg{width:26px; height:26px; color:var(--text-dim); stroke-width:1.3;}
+  .doc-chip .fname{font-size:12px; color:var(--text); font-weight:500;}
+  .doc-chip .fsize{font-size:10.5px; color:var(--text-dim);}
+  .wa-inputbar{
+    background:#F0F0F0; padding:10px 12px; display:flex; align-items:center; gap:10px; border-top:1px solid #E2E2E2;
+  }
+  .wa-inputbar .fake-input{flex:1; background:#fff; border-radius:20px; padding:9px 14px; font-size:12.5px; color:#9AA0A6;}
+  .wa-inputbar svg{color:#6B7280;}
+
+  /* ---------- Caption panel ---------- */
+  .caption-card{background:var(--card); border:1px solid var(--rule-soft); border-radius:8px; padding:24px; position:sticky; top:32px;}
+  .caption-card .tag{
+    display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:0.6px; text-transform:uppercase;
+    background:var(--accent-wash); color:var(--accent); padding:4px 9px; border-radius:4px; margin-bottom:14px;
+  }
+  .caption-card h2{font-family:'Source Serif 4', serif; font-size:19px; font-weight:600; margin:0 0 10px; color:var(--ink);}
+  .caption-card p{font-size:13px; line-height:1.7; color:var(--text-dim); margin:0 0 14px;}
+  .maps-to{border-top:1px solid var(--rule-soft); padding-top:14px; margin-top:6px;}
+  .maps-to span{display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-dim); margin-bottom:5px;}
+  .maps-to b{font-size:13px; color:var(--ink); font-weight:500;}
+
+  @media (max-width:900px){
+    .app{grid-template-columns:1fr;}
+    .scenario-panel{flex-direction:row; overflow-x:auto; align-items:flex-start;}
+    main{grid-template-columns:1fr; justify-items:center;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="scenario-panel">
+    <div>
+      <div class="brand-mark">Soledd</div>
+      <div class="brand-sub">Conversation Flows</div>
+    </div>
+    <div class="scenario-list" id="scenario-list"></div>
+    <div class="panel-foot">
+      LOS-WA-002, Phase 2<br>
+      Draft scripts. Not yet connected<br>
+      to the WhatsApp API.
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar-full">
+      <h1>WhatsApp Conversation Flows</h1>
+      <div class="meta">MOCKUP SCRIPT · SIMULATED DEVICE · NOT LIVE ON WHATSAPP</div>
+    </div>
+
+    <div class="phone">
+      <div class="phone-screen">
+        <div class="wa-header">
+          <div class="wa-avatar">SL</div>
+          <div class="wa-who"><b>Soledd Loans</b><span id="wa-status">online</span></div>
+        </div>
+        <div class="wa-body" id="chat-body"></div>
+        <div class="wa-inputbar">
+          <svg class="icon" viewBox="0 0 20 20"><path d="M10 12.5a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v4.5a3 3 0 0 0 3 3Z"/><path d="M5.5 9.5a4.5 4.5 0 0 0 9 0M10 15.5v2"/></svg>
+          <div class="fake-input">Type a message</div>
+          <svg class="icon" viewBox="0 0 20 20"><path d="M3 10l14-6-5.5 14-2.3-6.2L3 10Z"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="caption-card">
+      <div class="tag" id="cap-tag">Scenario</div>
+      <h2 id="cap-title">Title</h2>
+      <p id="cap-desc">Description</p>
+      <div class="maps-to">
+        <span>Maps to quote line</span>
+        <b id="cap-maps">Reference</b>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const scenarios = [
+  {
+    id:'new-ssb',
+    title:'New Application, SSB',
+    sub:'Category select + data capture',
+    desc:'The applicant opens a chat, picks their loan category from a numbered menu, then answers a short sequence of questions. Each answer is captured as structured data, not free text, so it lands cleanly in the admin queue.',
+    maps:'Row 15, Row 24: Bot Loan Application Flow',
+    status:'online',
+    messages:[
+      {who:'bot', text:'Hello, welcome to Soledd Loans. Please choose a loan type to begin.\n1. SSB, Civil Service\n2. Non-Government\n3. SME', time:'09:14'},
+      {who:'user', text:'1', time:'09:14', read:true},
+      {who:'bot', text:'SSB loan selected. What is your full name?', time:'09:15'},
+      {who:'user', text:'Rutendo Chikwanha', time:'09:15', read:true},
+      {who:'bot', text:'Thank you, Rutendo. What is your National ID number?', time:'09:15'},
+      {who:'user', text:'63-114872-A63', time:'09:16', read:true},
+      {who:'bot', text:'Which ministry or department do you work for?', time:'09:16'},
+      {who:'user', text:'Ministry of Health', time:'09:16', read:true},
+      {who:'bot', text:'How much would you like to borrow, in USD?', time:'09:17'},
+      {who:'user', text:'1200', time:'09:17', read:true},
+      {who:'bot', text:'Choose a repayment period.\n1. 3 months\n2. 6 months\n3. 12 months', time:'09:17'},
+      {who:'user', text:'2', time:'09:18', read:true},
+      {who:'bot', text:'Got it. Next, I will need three documents from you. Reply CONTINUE when ready.', time:'09:18'}
+    ]
+  },
+  {
+    id:'docs',
+    title:'Document Upload',
+    sub:'Guided, one file at a time',
+    desc:'The bot asks for documents one at a time rather than all at once, confirming receipt before requesting the next. This keeps the applicant from sending everything in a jumble and gives them a clear sense of progress.',
+    maps:'Row 15, Row 24: document upload, reference numbers',
+    status:'online',
+    messages:[
+      {who:'bot', text:'Please send a clear photo of your National ID first.', time:'09:19'},
+      {who:'user', doc:{name:'National_ID.jpg', size:'812 KB'}, time:'09:20', read:true},
+      {who:'bot', text:'Received, thank you. Now please send your most recent payslip.', time:'09:20'},
+      {who:'user', doc:{name:'Payslip_June.pdf', size:'240 KB'}, time:'09:21', read:true},
+      {who:'bot', text:'Got it. Last one, an employer confirmation letter.', time:'09:21'},
+      {who:'user', doc:{name:'Employer_Letter.jpg', size:'1.1 MB'}, time:'09:22', read:true},
+      {who:'bot', text:'All documents received. Your reference number is LOS-0142. A credit officer will review your application and update you within 2 business days.', time:'09:22'}
+    ]
+  },
+  {
+    id:'missing-info',
+    title:'Request More Info',
+    sub:'Officer flags an unclear document',
+    desc:'When a credit officer marks a document as unclear from the admin dashboard, the bot follows up automatically with a specific, plain-language request rather than a generic "documents rejected" message.',
+    maps:'Row 26: Approve, reject, request more info workflow',
+    status:'online',
+    messages:[
+      {who:'bot', text:'Hello Blessing. We are reviewing your application LOS-0113 (SME). Your bank statement photo is a little blurry, could you resend it showing the last 3 months clearly?', time:'11:02'},
+      {who:'user', doc:{name:'Statement_clear.jpg', size:'980 KB'}, time:'11:06', read:true},
+      {who:'bot', text:'Perfect, thank you. Your application is back in review, no further action needed from you right now.', time:'11:06'}
+    ]
+  },
+  {
+    id:'status',
+    title:'Status Check',
+    sub:'Applicant asks anytime',
+    desc:'Applicants can message at any point to check where their application stands, rather than waiting for the bot to reach out. This reduces phone calls into the office asking "any update?"',
+    maps:'Row 24: automated status updates',
+    status:'online',
+    messages:[
+      {who:'user', text:'Hi, what is the status of my loan application?', time:'14:40', read:true},
+      {who:'bot', text:'Hello Rutendo. Your application LOS-0114 (SSB, $1,200) is currently In Review. A credit officer will contact you within 2 business days if anything further is needed.', time:'14:41'}
+    ]
+  },
+  {
+    id:'approved',
+    title:'Approved',
+    sub:'Automatic notification on approval',
+    desc:'The moment a credit officer clicks Approve on the dashboard, the applicant gets a clear confirmation with the amount, disbursement timing, and repayment terms, no manual message-writing required from staff.',
+    maps:'Row 26: approve, reject actions on the dashboard',
+    status:'online',
+    messages:[
+      {who:'bot', text:'Good news, Tapiwa. Your application LOS-0112 (Non-Government, $850) has been Approved.', time:'16:03'},
+      {who:'bot', text:'Funds will be disbursed to your registered account within 24 hours. Repayment is $153 per month for 6 months, starting 1 August.', time:'16:03'}
+    ]
+  },
+  {
+    id:'rejected',
+    title:'Not Approved',
+    sub:'Clear reason, path to reapply',
+    desc:'A decline still names the reason and leaves the door open, rather than a flat no. This matters for how the client wants to be perceived by applicants, not just for legal clarity.',
+    maps:'Row 26: approve, reject actions on the dashboard',
+    status:'online',
+    messages:[
+      {who:'bot', text:'Hello Chiedza. After review, we are not able to approve application LOS-0111 at this time. The payslip on file could not be verified against your stated employer.', time:'10:12'},
+      {who:'bot', text:'You are welcome to reapply once you have an updated payslip. Reply MENU to start a new application.', time:'10:12'}
+    ]
+  }
+];
+
+const listEl = document.getElementById('scenario-list');
+const chatBody = document.getElementById('chat-body');
+
+function tickSvg(){
+  return '<svg class="icon tick" viewBox="0 0 20 20" style="width:13px;height:13px;"><path d="M2 10.5l3 3 6-7"/><path d="M7 10.5l3 3 8-9"/></svg>';
+}
+
+function renderScenario(scenario){
+  document.getElementById('wa-status').textContent = scenario.status;
+  document.getElementById('cap-tag').textContent = 'Scenario';
+  document.getElementById('cap-title').textContent = scenario.title;
+  document.getElementById('cap-desc').textContent = scenario.desc;
+  document.getElementById('cap-maps').textContent = scenario.maps;
+
+  chatBody.innerHTML = '';
+  scenario.messages.forEach((m, i) => {
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble ' + m.who;
+    bubble.style.animationDelay = (i * 90) + 'ms';
+
+    let inner = '';
+    if (m.doc){
+      inner += `<div class="doc-chip">
+        <svg viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="1.5"/><path d="M6.5 6.5h7M6.5 9.5h7M6.5 12.5h4"/></svg>
+        <div><div class="fname">${m.doc.name}</div><div class="fsize">${m.doc.size}</div></div>
+      </div>`;
+    }
+    if (m.text){
+      inner += m.text.split('\n').map(line => `<div>${line}</div>`).join('');
+    }
+    inner += `<div class="btime">${m.time}${m.who === 'user' ? tickSvg() : ''}</div>`;
+    bubble.innerHTML = inner;
+    chatBody.appendChild(bubble);
+  });
+  chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+scenarios.forEach((s, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'scenario-item' + (i === 0 ? ' active' : '');
+  btn.innerHTML = `<span class="s-title">${s.title}</span><span class="s-sub">${s.sub}</span>`;
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.scenario-item').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderScenario(s);
+  });
+  listEl.appendChild(btn);
+});
+
+renderScenario(scenarios[0]);
+</script>
+</body>
+</html>

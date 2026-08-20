@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soledd — The Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F7F5;
+    --card:#FFFFFF;
+    --ink:#13293D;
+    --ink-soft:#4C6377;
+    --rule:#DCE1E0;
+    --rule-soft:#EAEDEA;
+    --navy:#0F3A5C;
+    --navy-wash:rgba(15,58,92,0.07);
+    --red:#B4232E;
+    --red-wash:rgba(180,35,46,0.08);
+    --success:#2E7D4F;
+    --success-wash:rgba(46,125,79,0.08);
+    --warning:#B67A1D;
+    --warning-wash:rgba(182,122,29,0.1);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0F1A21;
+      --card:#16232C;
+      --ink:#E7ECEA;
+      --ink-soft:#93A6AE;
+      --rule:#26363F;
+      --rule-soft:#1D2A32;
+      --navy:#6FA8D6;
+      --navy-wash:rgba(111,168,214,0.1);
+      --red:#E17179;
+      --red-wash:rgba(225,113,121,0.1);
+      --success:#5FBF8A;
+      --success-wash:rgba(95,191,138,0.1);
+      --warning:#E0AC57;
+      --warning-wash:rgba(224,172,87,0.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0F1A21;
+    --card:#16232C;
+    --ink:#E7ECEA;
+    --ink-soft:#93A6AE;
+    --rule:#26363F;
+    --rule-soft:#1D2A32;
+    --navy:#6FA8D6;
+    --navy-wash:rgba(111,168,214,0.1);
+    --red:#E17179;
+    --red-wash:rgba(225,113,121,0.1);
+    --success:#5FBF8A;
+    --success-wash:rgba(95,191,138,0.1);
+    --warning:#E0AC57;
+    --warning-wash:rgba(224,172,87,0.12);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Public Sans', sans-serif; background:var(--paper); color:var(--ink); -webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono', monospace; font-variant-numeric:tabular-nums;}
+  .serif{font-family:'Fraunces', serif;}
+
+  .masthead{
+    border-bottom:1px solid var(--rule); background:var(--card);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:20px 40px;
+  }
+  .masthead .id{display:flex; align-items:baseline; gap:14px;}
+  .masthead .mark{font-family:'Fraunces', serif; font-size:23px; font-weight:600; letter-spacing:-0.01em;}
+  .masthead .reg{font-size:11px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; letter-spacing:0.04em;}
+  .masthead .officer{display:flex; align-items:center; gap:10px; font-size:13px;}
+  .masthead .officer .dot{width:7px;height:7px;border-radius:50%;background:var(--success);}
+
+  .app{display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 66px);}
+
+  .rail{border-right:1px solid var(--rule); padding:32px 0;}
+  .rail a{
+    display:block; padding:10px 32px; font-size:13.5px; color:var(--ink-soft);
+    text-decoration:none; border-left:2px solid transparent;
+  }
+  .rail a.active{color:var(--navy); border-left-color:var(--navy); background:var(--navy-wash); font-weight:600;}
+  .rail .group{
+    font-size:10px; text-transform:uppercase; letter-spacing:0.09em; color:var(--ink-soft);
+    padding:0 32px; margin:22px 0 8px; opacity:0.7;
+  }
+  .rail .group:first-child{margin-top:0;}
+
+  main{padding:40px 48px 80px;}
+
+  h1{font-family:'Fraunces', serif; font-size:30px; font-weight:600; margin:0 0 4px; letter-spacing:-0.01em; text-wrap:balance;}
+  .sub{font-size:13px; color:var(--ink-soft); margin-bottom:36px;}
+
+  .balance-strip{
+    display:grid; grid-template-columns:repeat(4, 1fr);
+    border:1px solid var(--rule); border-radius:2px; overflow:hidden; margin-bottom:44px;
+    background:var(--card);
+  }
+  .balance-strip .item{padding:22px 26px; border-right:1px solid var(--rule);}
+  .balance-strip .item:last-child{border-right:none;}
+  .balance-strip .label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-soft); margin-bottom:10px;}
+  .balance-strip .value{font-family:'Fraunces', serif; font-size:28px; font-weight:600;}
+  .balance-strip .value small{font-size:16px; font-weight:500; color:var(--ink-soft);}
+  .balance-strip .delta{font-size:11px; margin-top:6px; color:var(--success); font-family:'IBM Plex Mono',monospace;}
+
+  .section-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px;}
+  .section-head h2{font-family:'Fraunces', serif; font-size:18px; font-weight:600; margin:0;}
+  .section-head .count{font-size:12px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;}
+
+  .filters{display:flex; gap:6px; margin:18px 0 4px;}
+  .filters button{
+    all:unset; box-sizing:border-box; padding:6px 14px; font-size:12px; border-radius:20px;
+    border:1px solid var(--rule); color:var(--ink-soft); cursor:pointer; font-family:inherit;
+  }
+  .filters button.active{background:var(--navy); border-color:var(--navy); color:#fff;}
+
+  .ledger{border-top:1px solid var(--ink); margin-top:14px;}
+  .row{
+    display:grid; grid-template-columns:100px 1.6fr 1fr 120px 130px 110px;
+    align-items:center; padding:16px 6px; border-bottom:1px solid var(--rule-soft);
+    transition:background .12s;
+  }
+  .row:hover{background:var(--rule-soft);}
+  .row.head{
+    border-bottom:1px solid var(--ink); padding:0 6px 10px;
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; color:var(--ink-soft);
+  }
+  .row .ref{font-family:'IBM Plex Mono', monospace; font-size:12.5px; color:var(--ink-soft);}
+  .row .who b{display:block; font-size:14px; font-weight:600;}
+  .row .who span{font-size:11.5px; color:var(--ink-soft);}
+  .row .cat{font-size:12.5px;}
+  .row .amt{font-family:'IBM Plex Mono', monospace; font-variant-numeric:tabular-nums; font-size:13.5px; text-align:right; padding-right:18px;}
+  .row .agent{font-size:12px; color:var(--ink-soft);}
+
+  .stamp{
+    display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.06em; padding:4px 10px; border-radius:2px;
+  }
+  .stamp::before{content:""; width:6px; height:6px; border-radius:50%;}
+  .stamp.review{background:var(--warning-wash); color:var(--warning);}
+  .stamp.review::before{background:var(--warning);}
+  .stamp.approved{background:var(--success-wash); color:var(--success);}
+  .stamp.approved::before{background:var(--success);}
+  .stamp.rejected{background:var(--red-wash); color:var(--red);}
+  .stamp.rejected::before{background:var(--red);}
+
+  .foot-note{margin-top:20px; font-size:11.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;}
+
+  @media (max-width:860px){
+    .app{grid-template-columns:1fr;}
+    .rail{display:flex; overflow-x:auto; padding:14px 0; border-right:none; border-bottom:1px solid var(--rule);}
+    .balance-strip{grid-template-columns:repeat(2,1fr);}
+    .row{grid-template-columns:80px 1.4fr 1fr 100px; }
+    .row .agent, .row .cat{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="id">
+    <div class="mark">Soledd</div>
+    <div class="reg">REG. MICROFINANCE INSTITUTION · LOS REGISTER</div>
+  </div>
+  <div class="officer"><span class="dot"></span> Tendai Marufu — Office Manager</div>
+</div>
+
+<div class="app">
+  <aside class="rail">
+    <div class="group">Workflow</div>
+    <a href="#" class="active">Application Register</a>
+    <a href="#">Loan Calculators</a>
+    <div class="group">People</div>
+    <a href="#">Field Agents</a>
+    <a href="#">Credit Officers</a>
+    <div class="group">Records</div>
+    <a href="#">Exports</a>
+    <a href="#">Settings</a>
+  </aside>
+
+  <main>
+    <h1>Application Register</h1>
+    <div class="sub">All loan applications received via WhatsApp, in order of submission</div>
+
+    <div class="balance-strip">
+      <div class="item">
+        <div class="label">Pending Review</div>
+        <div class="value">6</div>
+        <div class="delta">awaiting officer action</div>
+      </div>
+      <div class="item">
+        <div class="label">Approved Today</div>
+        <div class="value">2</div>
+        <div class="delta">as of 4:12pm</div>
+      </div>
+      <div class="item">
+        <div class="label">Disbursed, Month</div>
+        <div class="value"><small>$</small>4,700</div>
+        <div class="delta">across 4 facilities</div>
+      </div>
+      <div class="item">
+        <div class="label">Active Field Agents</div>
+        <div class="value">1</div>
+        <div class="delta" style="color:var(--ink-soft);">Farai Sibanda</div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h2>Ledger</h2>
+      <div class="count">9 entries</div>
+    </div>
+    <div class="filters">
+      <button class="active">All</button>
+      <button>Civil Servants</button>
+      <button>Pensioners</button>
+      <button>SME</button>
+      <button>Private Sector</button>
+    </div>
+
+    <div class="ledger">
+      <div class="row head">
+        <div>Ref</div><div>Applicant</div><div>Category</div><div style="text-align:right; padding-right:18px;">Amount</div><div>Agent</div><div>Status</div>
+      </div>
+      <div class="row"><div class="ref">LOS-0109</div><div class="who"><b>Blessing Sibanda</b><span>Ministry of Education</span></div><div class="cat">Civil Servants</div><div class="amt">$950.00</div><div class="agent">F. Sibanda</div><div><span class="stamp rejected">Rejected</span></div></div>
+      <div class="row"><div class="ref">LOS-0108</div><div class="who"><b>Ropafadzo Chuma</b><span>Government Pensioner</span></div><div class="cat">Govt. Pensioners</div><div class="amt">$600.00</div><div class="agent">F. Sibanda</div><div><span class="stamp review">In Review</span></div></div>
+      <div class="row"><div class="ref">LOS-0107</div><div class="who"><b>Tapiwa Ncube</b><span>Econet Wireless</span></div><div class="cat">Private Sector</div><div class="amt">$800.00</div><div class="agent">F. Sibanda</div><div><span class="stamp review">In Review</span></div></div>
+      <div class="row"><div class="ref">LOS-0106</div><div class="who"><b>Chipo Dziva</b><span>Dziva Trading</span></div><div class="cat">SME</div><div class="amt">$3,500.00</div><div class="agent">F. Sibanda</div><div><span class="stamp approved">Approved</span></div></div>
+      <div class="row"><div class="ref">LOS-0105</div><div class="who"><b>Tendai Moyo</b><span>Ministry of Health</span></div><div class="cat">Civil Servants</div><div class="amt">$1,200.00</div><div class="agent">F. Sibanda</div><div><span class="stamp approved">Approved</span></div></div>
+      <div class="row"><div class="ref">LOS-0104</div><div class="who"><b>Rutendo Chikwanha</b><span>Payroll #4471</span></div><div class="cat">Civil Servants</div><div class="amt">$1,200.00</div><div class="agent">—</div><div><span class="stamp review">In Review</span></div></div>
+      <div class="row"><div class="ref">LOS-0103</div><div class="who"><b>Simbarashe Gumbo</b><span>Gumbo Transport</span></div><div class="cat">SME</div><div class="amt">$2,150.00</div><div class="agent">—</div><div><span class="stamp review">In Review</span></div></div>
+      <div class="row"><div class="ref">LOS-0102</div><div class="who"><b>Nyasha Chirwa</b><span>Ministry of Finance</span></div><div class="cat">Civil Servants</div><div class="amt">$1,450.00</div><div class="agent">—</div><div><span class="stamp review">In Review</span></div></div>
+      <div class="row"><div class="ref">LOS-0101</div><div class="who"><b>Chiedza Mutasa</b><span>Payroll #2290</span></div><div class="cat">Civil Servants</div><div class="amt">$980.00</div><div class="agent">—</div><div><span class="stamp rejected">Rejected</span></div></div>
+    </div>
+
+    <div class="foot-note">LOS-WA-002 · Suite 5, Baddow Court, 45 Livingstone Ave, Harare</div>
+  </main>
+</div>
+
+</body>
+</html>

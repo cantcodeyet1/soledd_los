@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soledd — Open Air</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Manrope:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FFFFFF;
+    --bg-soft:#FAFAF8;
+    --ink:#172026;
+    --ink-dim:#6B7680;
+    --rule:#E8E6E1;
+    --orange:#E96A18;
+    --orange-wash:#FDF1E8;
+    --navy:#0F3A5C;
+    --navy-wash:#EAF0F4;
+    --success:#2F8558;
+    --success-wash:#E9F4EE;
+    --critical:#C4392F;
+    --critical-wash:#FBEBE9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14191C;
+      --bg-soft:#1B2124;
+      --ink:#EDEFEE;
+      --ink-dim:#8D9AA0;
+      --rule:#2A3236;
+      --orange:#F0894A;
+      --orange-wash:#2B2019;
+      --navy:#7FADCD;
+      --navy-wash:#1B2730;
+      --success:#5CB889;
+      --success-wash:#182620;
+      --critical:#E17167;
+      --critical-wash:#2A1B19;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14191C; --bg-soft:#1B2124; --ink:#EDEFEE; --ink-dim:#8D9AA0; --rule:#2A3236;
+    --orange:#F0894A; --orange-wash:#2B2019; --navy:#7FADCD; --navy-wash:#1B2730;
+    --success:#5CB889; --success-wash:#182620; --critical:#E17167; --critical-wash:#2A1B19;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Manrope', sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;}
+  .display{font-family:'Sora', sans-serif;}
+  .mono{font-family:'Space Mono', monospace; font-variant-numeric:tabular-nums;}
+
+  nav{
+    display:flex; align-items:center; gap:36px; padding:0 44px; height:64px;
+    border-bottom:1px solid var(--rule);
+  }
+  nav .brand{font-family:'Sora',sans-serif; font-weight:700; font-size:16px;}
+  nav a{font-size:13.5px; color:var(--ink-dim); text-decoration:none; font-weight:600;}
+  nav a.active{color:var(--ink);}
+  nav .right{margin-left:auto; display:flex; align-items:center; gap:14px;}
+  nav .avatar{width:30px;height:30px;border-radius:50%; background:var(--navy-wash); color:var(--navy); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;}
+
+  main{max-width:1180px; margin:0 auto; padding:52px 44px 90px;}
+
+  .hero{display:flex; align-items:flex-end; gap:56px; margin-bottom:52px; flex-wrap:wrap;}
+  .hero .primary .eyebrow{font-size:12px; font-weight:700; color:var(--orange); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:10px;}
+  .hero .primary .num{font-family:'Sora',sans-serif; font-size:76px; font-weight:700; line-height:1; letter-spacing:-0.03em;}
+  .hero .primary .num span{font-size:28px; font-weight:600; color:var(--ink-dim); margin-left:6px;}
+  .hero .primary .cap{font-size:14px; color:var(--ink-dim); margin-top:8px;}
+
+  .hero .rail{display:flex; gap:34px; padding-bottom:10px;}
+  .hero .rail .item .v{font-family:'Sora',sans-serif; font-size:24px; font-weight:700;}
+  .hero .rail .item .l{font-size:12px; color:var(--ink-dim); margin-top:4px;}
+
+  .toolbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; gap:16px; flex-wrap:wrap;}
+  .toolbar h2{font-family:'Sora',sans-serif; font-size:19px; font-weight:700; margin:0;}
+  .chips{display:flex; gap:8px;}
+  .chips button{
+    all:unset; padding:7px 15px; font-size:12.5px; font-weight:600; border-radius:22px;
+    border:1px solid var(--rule); color:var(--ink-dim); cursor:pointer; font-family:'Manrope',sans-serif;
+  }
+  .chips button.active{background:var(--ink); color:var(--bg); border-color:var(--ink);}
+  .search{
+    display:flex; align-items:center; gap:8px; border:1px solid var(--rule); border-radius:22px;
+    padding:8px 16px; font-size:12.5px; color:var(--ink-dim); width:230px;
+  }
+
+  .grid{display:grid; grid-template-columns:repeat(3, 1fr); gap:16px;}
+  .card{
+    border:1px solid var(--rule); border-radius:16px; padding:22px; background:var(--bg-soft);
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .card .top{display:flex; justify-content:space-between; align-items:flex-start;}
+  .card .name{font-family:'Sora',sans-serif; font-size:16px; font-weight:700;}
+  .card .sub{font-size:12px; color:var(--ink-dim); margin-top:3px;}
+  .card .ref{font-family:'Space Mono',monospace; font-size:11px; color:var(--ink-dim);}
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.05em; padding:5px 10px; border-radius:20px; width:fit-content;
+  }
+  .pill.review{background:var(--orange-wash); color:var(--orange);}
+  .pill.approved{background:var(--success-wash); color:var(--success);}
+  .pill.rejected{background:var(--critical-wash); color:var(--critical);}
+  .card .foot{display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--rule); padding-top:14px;}
+  .card .amt{font-family:'Space Mono',monospace; font-size:16px; font-weight:700;}
+  .card .cat{font-size:11.5px; color:var(--ink-dim); background:var(--bg); border:1px solid var(--rule); padding:4px 9px; border-radius:20px;}
+  .card .agent{font-size:11px; color:var(--ink-dim);}
+
+  @media (max-width:900px){
+    .grid{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (max-width:620px){
+    .grid{grid-template-columns:1fr;}
+    .hero{flex-direction:column; align-items:flex-start;}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">Soledd</div>
+  <a href="#" class="active">Queue</a>
+  <a href="#">Calculators</a>
+  <a href="#">Field Agents</a>
+  <a href="#">Credit Officers</a>
+  <div class="right">
+    <div class="avatar">TM</div>
+  </div>
+</nav>
+
+<main>
+  <div class="hero">
+    <div class="primary">
+      <div class="eyebrow">Application Queue</div>
+      <div class="num">6<span>pending review</span></div>
+      <div class="cap">9 applications received via WhatsApp this week</div>
+    </div>
+    <div class="rail">
+      <div class="item"><div class="v" style="color:var(--success);">2</div><div class="l">Approved today</div></div>
+      <div class="item"><div class="v">$4,700</div><div class="l">Disbursed, month</div></div>
+      <div class="item"><div class="v">1</div><div class="l">Active field agent</div></div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <h2>All Applications</h2>
+    <div class="chips">
+      <button class="active">All</button>
+      <button>Civil Servants</button>
+      <button>Pensioners</button>
+      <button>SME</button>
+      <button>Private Sector</button>
+    </div>
+    <div class="search">🔍 Search reference or name…</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="top"><div><div class="name">Chipo Dziva</div><div class="sub">Dziva Trading</div></div><span class="ref">LOS-0106</span></div>
+      <span class="pill approved">Approved</span>
+      <div class="foot"><span class="amt">$3,500</span><span class="cat">SME</span></div>
+      <div class="agent">Agent: F. Sibanda</div>
+    </div>
+    <div class="card">
+      <div class="top"><div><div class="name">Tendai Moyo</div><div class="sub">Ministry of Health</div></div><span class="ref">LOS-0105</span></div>
+      <span class="pill approved">Approved</span>
+      <div class="foot"><span class="amt">$1,200</span><span class="cat">Civil Servants</span></div>
+      <div class="agent">Agent: F. Sibanda</div>
+    </div>
+    <div class="card">
+      <div class="top"><div><div class="name">Tapiwa Ncube</div><div class="sub">Econet Wireless</div></div><span class="ref">LOS-0107</span></div>
+      <span class="pill review">In Review</span>
+      <div class="foot"><span class="amt">$800</span><span class="cat">Private Sector</span></div>
+      <div class="agent">Agent: F. Sibanda</div>
+    </div>
+    <div class="card">
+      <div class="top"><div><div class="name">Ropafadzo Chuma</div><div class="sub">Government Pensioner</div></div><span class="ref">LOS-0108</span></div>
+      <span class="pill review">In Review</span>
+      <div class="foot"><span class="amt">$600</span><span class="cat">Govt. Pensioners</span></div>
+      <div class="agent">Agent: F. Sibanda</div>
+    </div>
+    <div class="card">
+      <div class="top"><div><div class="name">Rutendo Chikwanha</div><div class="sub">Payroll #4471</div></div><span class="ref">LOS-0104</span></div>
+      <span class="pill review">In Review</span>
+      <div class="foot"><span class="amt">$1,200</span><span class="cat">Civil Servants</span></div>
+      <div class="agent">No agent</div>
+    </div>
+    <div class="card">
+      <div class="top"><div><div class="name">Blessing Sibanda</div><div class="sub">Ministry of Education</div></div><span class="ref">LOS-0109</span></div>
+      <span class="pill rejected">Rejected</span>
+      <div class="foot"><span class="amt">$950</span><span class="cat">Civil Servants</span></div>
+      <div class="agent">Agent: F. Sibanda</div>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

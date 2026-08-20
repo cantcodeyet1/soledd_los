@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soledd — The Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Deliberately dark-only — an operations console, not an office document.
+     Colors are painted explicitly rather than theme-switched. */
+  :root{
+    --ground:#0A141C;
+    --surface:#111E29;
+    --surface-raised:#16242F;
+    --ink:#DCE6EE;
+    --ink-dim:#7C93A3;
+    --ink-faint:#516674;
+    --rule:#223140;
+    --gold:#E8A93B;
+    --gold-wash:rgba(232,169,59,0.1);
+    --cool:#4FA6D8;
+    --success:#3FA66B;
+    --success-wash:rgba(63,166,107,0.12);
+    --critical:#D6484B;
+    --critical-wash:rgba(214,72,75,0.12);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Work Sans', sans-serif; background:var(--ground); color:var(--ink); -webkit-font-smoothing:antialiased;}
+  .display{font-family:'Archivo', sans-serif;}
+  .mono{font-family:'JetBrains Mono', monospace; font-variant-numeric:tabular-nums;}
+  svg.icon{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
+
+  .app{display:grid; grid-template-columns:60px 1fr; height:100vh;}
+
+  .icon-rail{
+    background:var(--surface); border-right:1px solid var(--rule);
+    display:flex; flex-direction:column; align-items:center; padding:18px 0; gap:6px;
+  }
+  .icon-rail .brand{width:32px; height:32px; border-radius:8px; background:var(--gold); color:#1A1305; display:flex; align-items:center; justify-content:center; font-family:'Archivo',sans-serif; font-weight:800; font-size:14px; margin-bottom:22px;}
+  .icon-rail a{
+    width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    color:var(--ink-dim); text-decoration:none; position:relative;
+  }
+  .icon-rail a.active{background:var(--gold-wash); color:var(--gold);}
+  .icon-rail a.active::before{content:""; position:absolute; left:-18px; width:3px; height:18px; background:var(--gold); border-radius:2px;}
+  .icon-rail .spacer{flex:1;}
+  .icon-rail .officer{width:32px; height:32px; border-radius:50%; background:var(--surface-raised); border:1px solid var(--rule); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:var(--ink-dim);}
+
+  main{display:flex; flex-direction:column; min-width:0;}
+
+  .cmdbar{
+    display:flex; align-items:center; gap:28px; padding:14px 28px; border-bottom:1px solid var(--rule);
+    background:var(--surface);
+  }
+  .cmdbar .title{font-family:'Archivo',sans-serif; font-weight:700; font-size:15px; letter-spacing:0.01em;}
+  .cmdbar .stat{display:flex; align-items:baseline; gap:6px; font-size:12.5px; color:var(--ink-dim);}
+  .cmdbar .stat b{font-family:'JetBrains Mono',monospace; font-size:15px; color:var(--ink); font-weight:600;}
+  .cmdbar .stat b.gold{color:var(--gold);}
+  .cmdbar .stat b.success{color:var(--success);}
+  .cmdbar .search{
+    margin-left:auto; background:var(--ground); border:1px solid var(--rule); border-radius:6px;
+    padding:7px 12px; font-size:12.5px; color:var(--ink-faint); display:flex; align-items:center; gap:8px; width:220px;
+  }
+
+  .split{flex:1; display:grid; grid-template-columns:1.15fr 1fr; min-height:0;}
+
+  .queue{border-right:1px solid var(--rule); overflow-y:auto;}
+  .queue .filters{display:flex; gap:4px; padding:14px 20px 10px; border-bottom:1px solid var(--rule); position:sticky; top:0; background:var(--ground); z-index:1;}
+  .queue .filters button{
+    all:unset; padding:5px 11px; font-size:11.5px; color:var(--ink-dim); border-radius:5px; cursor:pointer; font-family:'Work Sans',sans-serif;
+  }
+  .queue .filters button.active{background:var(--surface-raised); color:var(--ink);}
+
+  .item{
+    display:flex; align-items:center; gap:14px; padding:14px 20px; border-bottom:1px solid var(--rule);
+    cursor:pointer; transition:background .1s;
+  }
+  .item:hover{background:var(--surface);}
+  .item.selected{background:var(--surface-raised); box-shadow:inset 3px 0 0 var(--gold);}
+  .item .sev{width:7px; height:7px; border-radius:50%; flex-shrink:0;}
+  .sev.review{background:var(--gold);}
+  .sev.approved{background:var(--success);}
+  .sev.rejected{background:var(--critical);}
+  .item .info{flex:1; min-width:0;}
+  .item .info .top{display:flex; justify-content:space-between; gap:10px;}
+  .item .name{font-size:13.5px; font-weight:600;}
+  .item .ref{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-faint);}
+  .item .meta{font-size:11.5px; color:var(--ink-dim); margin-top:3px;}
+  .item .amt{font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ink); flex-shrink:0;}
+
+  .detail{padding:28px 30px; overflow-y:auto;}
+  .detail .kicker{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-faint); letter-spacing:0.04em; margin-bottom:6px;}
+  .detail h2{font-family:'Archivo',sans-serif; font-size:22px; font-weight:700; margin:0 0 4px;}
+  .detail .headline{font-size:13px; color:var(--ink-dim); margin-bottom:24px;}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:26px;}
+  .field{background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:13px 15px;}
+  .field .l{font-size:10px; text-transform:uppercase; letter-spacing:0.07em; color:var(--ink-faint); margin-bottom:5px;}
+  .field .v{font-size:13.5px; font-weight:500;}
+  .field .v.mono{font-family:'JetBrains Mono',monospace;}
+
+  .actions{display:flex; gap:8px; margin-bottom:26px;}
+  .actions button{
+    all:unset; box-sizing:border-box; padding:9px 16px; border-radius:7px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:'Work Sans',sans-serif;
+  }
+  .btn-approve{background:var(--success); color:#08210F;}
+  .btn-reject{background:var(--critical-wash); color:var(--critical); border:1px solid rgba(214,72,75,0.3) !important;}
+  .btn-ghost{border:1px solid var(--rule) !important; color:var(--ink-dim);}
+
+  .trend{display:flex; align-items:center; gap:10px; padding:12px 15px; background:var(--surface); border:1px solid var(--rule); border-radius:8px;}
+  .trend svg{flex-shrink:0;}
+  .trend .t-label{font-size:11px; color:var(--ink-dim);}
+  .trend .t-val{font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:600; color:var(--success);}
+
+  @media (max-width:900px){
+    .split{grid-template-columns:1fr;}
+    .detail{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="icon-rail">
+    <div class="brand">S</div>
+    <a class="active" title="Queue"><svg class="icon" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M6.5 8h7M6.5 11h7M6.5 14h4"/></svg></a>
+    <a title="Calculator"><svg class="icon" viewBox="0 0 20 20"><rect x="4" y="2.5" width="12" height="15" rx="1.5"/><path d="M6.5 5.5h7"/><circle cx="7" cy="9.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="9.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="13" cy="9.5" r="0.9" fill="currentColor" stroke="none"/></svg></a>
+    <a title="Field Agents"><svg class="icon" viewBox="0 0 20 20"><circle cx="7.5" cy="7" r="2.4"/><path d="M3 16c0-2.5 2-4 4.5-4S12 13.5 12 16"/><circle cx="14" cy="7.8" r="1.8"/><path d="M13 12.2c1.9.1 3.5 1.4 3.5 3.6"/></svg></a>
+    <a title="Credit Officers"><svg class="icon" viewBox="0 0 20 20"><path d="M10 2.5 16 5v4.5c0 4-2.6 6.8-6 8-3.4-1.2-6-4-6-8V5l6-2.5Z"/></svg></a>
+    <div class="spacer"></div>
+    <a class="officer">TM</a>
+  </div>
+
+  <main>
+    <div class="cmdbar">
+      <div class="title">Application Queue</div>
+      <div class="stat">Pending <b class="gold">6</b></div>
+      <div class="stat">Approved today <b class="success">2</b></div>
+      <div class="stat">Disbursed, month <b>$4,700</b></div>
+      <div class="search"><svg class="icon" style="width:14px;height:14px;" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M16 16l-3.2-3.2"/></svg> Search reference…</div>
+    </div>
+
+    <div class="split">
+      <div class="queue">
+        <div class="filters">
+          <button class="active">All (9)</button>
+          <button>Civil Servants</button>
+          <button>Pensioners</button>
+          <button>SME</button>
+          <button>Private Sector</button>
+        </div>
+
+        <div class="item selected">
+          <span class="sev approved"></span>
+          <div class="info"><div class="top"><span class="name">Chipo Dziva</span><span class="ref">LOS-0106</span></div><div class="meta">SME · Dziva Trading · F. Sibanda</div></div>
+          <div class="amt">$3,500</div>
+        </div>
+        <div class="item">
+          <span class="sev review"></span>
+          <div class="info"><div class="top"><span class="name">Tapiwa Ncube</span><span class="ref">LOS-0107</span></div><div class="meta">Private Sector · Econet Wireless · F. Sibanda</div></div>
+          <div class="amt">$800</div>
+        </div>
+        <div class="item">
+          <span class="sev review"></span>
+          <div class="info"><div class="top"><span class="name">Ropafadzo Chuma</span><span class="ref">LOS-0108</span></div><div class="meta">Govt. Pensioner · F. Sibanda</div></div>
+          <div class="amt">$600</div>
+        </div>
+        <div class="item">
+          <span class="sev rejected"></span>
+          <div class="info"><div class="top"><span class="name">Blessing Sibanda</span><span class="ref">LOS-0109</span></div><div class="meta">Civil Servants · Min. of Education · F. Sibanda</div></div>
+          <div class="amt">$950</div>
+        </div>
+        <div class="item">
+          <span class="sev approved"></span>
+          <div class="info"><div class="top"><span class="name">Tendai Moyo</span><span class="ref">LOS-0105</span></div><div class="meta">Civil Servants · Min. of Health · F. Sibanda</div></div>
+          <div class="amt">$1,200</div>
+        </div>
+        <div class="item">
+          <span class="sev review"></span>
+          <div class="info"><div class="top"><span class="name">Rutendo Chikwanha</span><span class="ref">LOS-0104</span></div><div class="meta">Civil Servants · Payroll #4471</div></div>
+          <div class="amt">$1,200</div>
+        </div>
+        <div class="item">
+          <span class="sev review"></span>
+          <div class="info"><div class="top"><span class="name">Simbarashe Gumbo</span><span class="ref">LOS-0103</span></div><div class="meta">SME · Gumbo Transport</div></div>
+          <div class="amt">$2,150</div>
+        </div>
+      </div>
+
+      <div class="detail">
+        <div class="kicker">LOS-0106 · SUBMITTED VIA WHATSAPP</div>
+        <h2>Chipo Dziva</h2>
+        <div class="headline">SME · Dziva Trading, Bulawayo</div>
+
+        <div class="grid2">
+          <div class="field"><div class="l">National ID</div><div class="v mono">63-100002-A11</div></div>
+          <div class="field"><div class="l">Status</div><div class="v" style="color:var(--success);">Approved</div></div>
+          <div class="field"><div class="l">Loan Amount</div><div class="v mono">$3,500.00</div></div>
+          <div class="field"><div class="l">Repayment</div><div class="v">12 months</div></div>
+          <div class="field"><div class="l">Applicant Phone</div><div class="v mono">263775550102</div></div>
+          <div class="field"><div class="l">Field Agent</div><div class="v mono">263775550100</div></div>
+        </div>
+
+        <div class="actions">
+          <button class="btn-approve">Approve</button>
+          <button class="btn-reject">Reject</button>
+          <button class="btn-ghost">Export PDF</button>
+        </div>
+
+        <div class="trend">
+          <svg width="90" height="30" viewBox="0 0 90 30"><polyline points="0,24 15,20 30,22 45,12 60,15 75,6 90,8" fill="none" stroke="#3FA66B" stroke-width="2"/><circle cx="90" cy="8" r="2.5" fill="#3FA66B"/></svg>
+          <div><div class="t-label">Agent approval rate, 30d</div><div class="t-val">40% ↑</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

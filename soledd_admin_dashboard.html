@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soledd LOS: Admin Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Brand palette: Primary deep blue / Secondary red-orange-gold / Neutral white+cream / Accent light grey */
+    --ink:#003049;          /* Primary — headers, titles, sidebar, footer */
+    --paper:#F5F5F5;        /* Accent light grey — page/section background */
+    --card:#FFFFFF;         /* Neutral white — panel/card background */
+    --cream:#EAE2B7;        /* Neutral cream — sparing warm contrast (hovers, soft badges) */
+    --rule:#DBDAD3;
+    --rule-soft:#E8E7E1;
+
+    --accent:#D62828;        /* Secondary red — buttons, CTAs, active states */
+    --accent-deep:#A81F1F;   /* darkened red — hover state */
+    --accent-bright:#F77F00; /* Secondary orange — pops on dark sidebar, in-progress states */
+    --accent-wash:rgba(214,40,40,0.08);
+    --accent-text:#D62828;
+    --gold:#FCBF49;          /* Secondary gold — used minimally for highlights */
+
+    --sage:#3F7D5C;
+    --sage-bg:#E7F0EA;
+    --clay:#A81F1F;
+    --clay-bg:#F7E6E6;
+    --slate:#7C8493;
+    --slate-bg:#EAEBEE;
+    --text:#232B36;
+    --text-dim:#5B6472;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'IBM Plex Sans', sans-serif;
+    background:var(--paper);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+  svg.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+
+  .app{display:grid; grid-template-columns:236px 1fr; min-height:100vh;}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    background:var(--ink); color:#C7CDD8;
+    padding:28px 20px; display:flex; flex-direction:column; gap:36px;
+  }
+  .brand{
+    display:flex; flex-direction:column; gap:2px;
+    border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:20px;
+  }
+  .brand-mark{font-family:'Source Serif 4', serif; font-size:22px; font-weight:600; color:#fff;}
+  .brand-sub{font-size:11px; color:var(--accent-bright); text-transform:uppercase; letter-spacing:1.4px; font-weight:500;}
+  nav{display:flex; flex-direction:column; gap:2px;}
+  .nav-label{font-size:10.5px; text-transform:uppercase; letter-spacing:1.3px; color:#5F6B7E; margin:14px 4px 6px;}
+  button.nav-item{
+    all:unset; box-sizing:border-box; width:100%;
+    display:flex; align-items:center; gap:10px;
+    padding:9px 12px; border-radius:6px; font-size:13.5px;
+    color:#C7CDD8; cursor:pointer; border-left:2px solid transparent;
+    font-family:inherit;
+  }
+  .nav-item:hover{background:rgba(255,255,255,0.06);}
+  .nav-item:focus-visible{outline:2px solid var(--accent-bright); outline-offset:2px;}
+  .nav-item.active{background:rgba(247,127,0,0.16); border-left:2px solid var(--accent-bright); color:#fff;}
+  .nav-item svg{color:#7A8397;}
+  .nav-item.active svg{color:var(--accent-bright);}
+  .sidebar-foot{
+    margin-top:auto; font-size:11px; color:#4C5568; line-height:1.6;
+    border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;
+  }
+
+  /* ---------- Main ---------- */
+  main{padding:32px 40px 60px; max-width:1280px;}
+  .topbar{display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:28px; gap:20px; flex-wrap:wrap;}
+  .topbar h1{font-family:'Source Serif 4', serif; font-size:28px; font-weight:600; margin:0 0 4px; color:var(--ink);}
+  .topbar .meta{font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--text-dim); letter-spacing:0.3px;}
+  .agent-chip{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--rule-soft); padding:8px 14px 8px 8px; border-radius:30px;}
+  .agent-avatar{width:28px;height:28px;border-radius:50%; background:var(--accent); color:#fff; display:flex;align-items:center;justify-content:center; font-size:12px;font-weight:600; font-family:'Source Serif 4',serif;}
+  .agent-chip .who{font-size:12.5px; line-height:1.3;}
+  .agent-chip .who b{display:block; font-size:13px;}
+  .agent-chip .who span{color:var(--text-dim); font-size:11px;}
+
+  /* ---------- Stat cards ---------- */
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:32px;}
+  .stat-card{background:var(--card); border:1px solid var(--rule-soft); border-radius:8px; padding:18px 20px; position:relative; overflow:hidden;}
+  .stat-card::before{
+    content:""; position:absolute; inset:0;
+    background-image:repeating-linear-gradient(to bottom, transparent, transparent 15px, rgba(27,36,48,0.025) 15px, rgba(27,36,48,0.025) 16px);
+    pointer-events:none;
+  }
+  .stat-label{font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-dim); margin-bottom:10px; position:relative;}
+  .stat-value{font-family:'Source Serif 4', serif; font-size:30px; font-weight:600; color:var(--ink); position:relative;}
+  .stat-value small{font-size:15px; font-weight:500; color:var(--text-dim);}
+  .stat-delta{font-family:'IBM Plex Mono', monospace; font-size:11px; margin-top:6px; position:relative; color:var(--text-dim);}
+
+  /* ---------- Panel / table ---------- */
+  .panel{background:var(--card); border:1px solid var(--rule-soft); border-radius:8px; overflow:hidden;}
+  .panel-head{display:flex; justify-content:space-between; align-items:center; padding:18px 22px; border-bottom:1px solid var(--rule-soft); flex-wrap:wrap; gap:12px;}
+  .tabs{display:flex; gap:4px; background:var(--paper); padding:3px; border-radius:7px;}
+  button.tab{
+    all:unset; box-sizing:border-box; padding:7px 14px; font-size:12.5px; font-weight:500;
+    border-radius:5px; cursor:pointer; color:var(--text-dim); font-family:inherit;
+  }
+  .tab:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .tab.active{background:var(--ink); color:#fff;}
+
+  .search-wrap{
+    display:flex; align-items:center; gap:8px; background:var(--paper);
+    border:1px solid var(--rule-soft); border-radius:7px; padding:7px 12px;
+    min-width:240px; color:var(--text-dim);
+  }
+  .search-wrap svg{color:var(--text-dim);}
+  .search-wrap input{
+    all:unset; font-size:12.5px; color:var(--text); width:100%; font-family:inherit;
+  }
+  .search-wrap input::placeholder{color:var(--text-dim);}
+
+  table{width:100%; border-collapse:collapse;}
+  thead th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:1px; color:var(--text-dim); padding:12px 22px; border-bottom:1px solid var(--rule-soft); font-weight:500;}
+  tbody td{padding:15px 22px; font-size:13px; border-bottom:1px solid var(--rule-soft); vertical-align:middle;}
+  tbody tr{cursor:pointer; transition:background .12s;}
+  tbody tr:hover{background:#F5F0DC;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr.hidden-row{display:none;}
+  .ref{font-family:'IBM Plex Mono', monospace; color:var(--text-dim); font-size:12px;}
+  .applicant b{display:block; font-size:13.5px;}
+  .applicant span{font-size:11.5px; color:var(--text-dim);}
+  .cat{font-size:11px; font-weight:600; letter-spacing:0.4px; padding:3px 9px; border-radius:4px;}
+  .cat.ssb{background:#E5EAEC; color:#003049;}
+  .cat.ngo{background:#FBF0D9; color:#8A6212;}
+  .cat.sme{background:var(--accent-wash); color:var(--accent-text);}
+  .amt{font-family:'IBM Plex Mono', monospace; font-weight:500;}
+  .stamp{display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono', monospace; font-size:10.5px; font-weight:500; letter-spacing:0.8px; text-transform:uppercase; padding:4px 10px 4px 8px; border-radius:3px; color:#fff;}
+  .stamp::before{content:"●"; font-size:8px; color:rgba(255,255,255,0.7);}
+  .stamp.pending{background:#5B6472;}
+  .stamp.review{background:var(--accent-bright);}
+  .stamp.approved{background:#2E6B49;}
+  .stamp.rejected{background:var(--accent-deep);}
+  .agent-name{font-size:12.5px; color:var(--text-dim);}
+  .row-actions{display:flex; gap:6px;}
+  button.icon-btn{
+    all:unset; box-sizing:border-box; width:26px; height:26px; border-radius:5px;
+    border:1px solid var(--rule-soft); background:#fff; display:flex; align-items:center; justify-content:center;
+    color:var(--text-dim); cursor:pointer;
+  }
+  .icon-btn:hover{border-color:var(--accent); color:var(--accent-text);}
+  .icon-btn:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .icon-btn.approve:hover{color:var(--sage); border-color:var(--sage);}
+  .icon-btn.reject:hover{color:var(--clay); border-color:var(--clay);}
+
+  .panel-note{padding:14px 22px; font-size:11.5px; color:var(--text-dim); border-top:1px solid var(--rule-soft); display:flex; justify-content:space-between; align-items:center;}
+  .note-tag{font-family:'IBM Plex Mono', monospace; background:var(--slate-bg); color:var(--slate); padding:3px 8px; border-radius:4px; font-size:10px; letter-spacing:0.5px;}
+
+  /* ---------- Document viewer ---------- */
+  .doc-layout{display:grid; grid-template-columns:280px 1fr; gap:20px;}
+  .doc-list{background:var(--card); border:1px solid var(--rule-soft); border-radius:8px; overflow:hidden; align-self:start;}
+  .doc-list-head{padding:16px 18px; border-bottom:1px solid var(--rule-soft);}
+  .doc-list-head b{font-size:13px;}
+  .doc-list-head span{display:block; font-size:11.5px; color:var(--text-dim); font-family:'IBM Plex Mono', monospace; margin-top:2px;}
+  button.doc-item{
+    all:unset; box-sizing:border-box; width:100%; display:flex; align-items:center; gap:10px;
+    padding:12px 18px; font-size:12.5px; color:var(--text); border-bottom:1px solid var(--rule-soft); cursor:pointer;
+  }
+  .doc-item:last-child{border-bottom:none;}
+  .doc-item:hover{background:#F5F0DC;}
+  .doc-item.selected{background:var(--accent-wash);}
+  .doc-item svg{color:var(--text-dim);}
+  .doc-item.selected svg{color:var(--accent-text);}
+  .doc-status{margin-left:auto; font-size:10px; font-family:'IBM Plex Mono', monospace; color:var(--sage); text-transform:uppercase;}
+  .doc-preview{background:var(--card); border:1px dashed var(--rule); border-radius:8px; min-height:420px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:var(--text-dim); text-align:center; padding:40px;}
+  .doc-preview svg{width:40px; height:40px; stroke-width:1.2; color:var(--text-dim);}
+  .doc-preview b{color:var(--text); font-family:'Source Serif 4', serif; font-size:16px; font-weight:600;}
+  .doc-preview p{max-width:320px; font-size:12.5px; line-height:1.6; margin:0;}
+
+  /* ---------- Calculator ---------- */
+  .calc-wrap{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  .calc-card{background:var(--card); border:1px solid var(--rule-soft); border-radius:8px; padding:26px;}
+  .field{margin-bottom:18px;}
+  .field label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-dim); margin-bottom:7px;}
+  .field select, .field input{
+    width:100%; padding:10px 12px; font-size:13.5px; border:1px solid var(--rule-soft); border-radius:6px;
+    background:#fff; color:var(--text); font-family:'IBM Plex Sans', sans-serif;
+  }
+  .field select:focus, .field input:focus{outline:none; border-color:var(--accent);}
+  button.calc-btn{
+    all:unset; box-sizing:border-box; display:inline-flex; align-items:center; gap:8px;
+    background:var(--accent); color:#fff; padding:11px 20px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;
+  }
+  .calc-btn:hover{background:var(--accent-deep);}
+  .calc-btn:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
+  .calc-result{display:flex; flex-direction:column; justify-content:center; gap:18px;}
+  .result-row{display:flex; justify-content:space-between; align-items:baseline; padding-bottom:14px; border-bottom:1px solid var(--rule-soft);}
+  .result-row:last-child{border-bottom:none;}
+  .result-row .rlabel{font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.6px;}
+  .result-row .rval{font-family:'Source Serif 4', serif; font-size:22px; font-weight:600; color:var(--ink);}
+
+  /* ---------- Generic stub view ---------- */
+  .stub{background:var(--card); border:1px solid var(--rule-soft); border-radius:8px; padding:60px 40px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:14px;}
+  .stub svg{width:36px; height:36px; stroke-width:1.2; color:var(--accent-text);}
+  .stub b{font-family:'Source Serif 4', serif; font-size:18px; font-weight:600; color:var(--ink);}
+  .stub p{max-width:380px; font-size:13px; color:var(--text-dim); line-height:1.6; margin:0;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  @media (max-width:900px){
+    .app{grid-template-columns:1fr;}
+    .sidebar{flex-direction:row; overflow-x:auto; align-items:center;}
+    .stats{grid-template-columns:repeat(2,1fr);}
+    .doc-layout, .calc-wrap{grid-template-columns:1fr;}
+  }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Soledd</div>
+      <div class="brand-sub">Loan Origination · WhatsApp</div>
+    </div>
+
+    <nav>
+      <div class="nav-label">Workflow</div>
+      <button class="nav-item active" data-view="queue">
+        <svg class="icon" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M6.5 8h7M6.5 11h7M6.5 14h4"/></svg>
+        Application Queue
+      </button>
+      <button class="nav-item" data-view="documents">
+        <svg class="icon" viewBox="0 0 20 20"><path d="M6 2.5h6l3 3V17a.6.6 0 0 1-.6.6H6.6a.6.6 0 0 1-.6-.6V3.1a.6.6 0 0 1 .6-.6Z"/><path d="M12 2.5V6h3"/><path d="M8 10h4M8 13h4"/></svg>
+        Document Viewer
+      </button>
+      <button class="nav-item" data-view="calculator">
+        <svg class="icon" viewBox="0 0 20 20"><rect x="4" y="2.5" width="12" height="15" rx="1.5"/><path d="M6.5 5.5h7"/><circle cx="7" cy="9.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="9.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="13" cy="9.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="7" cy="12.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="12.5" r="0.9" fill="currentColor" stroke="none"/><circle cx="13" cy="12.5" r="0.9" fill="currentColor" stroke="none"/></svg>
+        Loan Calculators
+      </button>
+
+      <div class="nav-label">People</div>
+      <button class="nav-item" data-view="agents">
+        <svg class="icon" viewBox="0 0 20 20"><circle cx="7.5" cy="7" r="2.4"/><path d="M3 16c0-2.5 2-4 4.5-4S12 13.5 12 16"/><circle cx="14" cy="7.8" r="1.8"/><path d="M13 12.2c1.9.1 3.5 1.4 3.5 3.6"/></svg>
+        Field Agents
+      </button>
+      <button class="nav-item" data-view="officers">
+        <svg class="icon" viewBox="0 0 20 20"><path d="M10 2.5 16 5v4.5c0 4-2.6 6.8-6 8-3.4-1.2-6-4-6-8V5l6-2.5Z"/><path d="M7.5 10l1.8 1.8L13 8"/></svg>
+        Credit Officers
+      </button>
+
+      <div class="nav-label">Oversight</div>
+      <button class="nav-item" data-view="settings">
+        <svg class="icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1"/></svg>
+        Settings
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      LOS-WA-002<br>
+      Preliminary layout, no live data<br>
+      wired yet.
+    </div>
+  </aside>
+
+  <main>
+
+    <!-- ============ QUEUE VIEW ============ -->
+    <section class="view active" id="view-queue">
+      <div class="topbar">
+        <div>
+          <h1>Application Queue</h1>
+          <div class="meta">REF LOS-WA-002 · MOCKUP DATA · NOT CONNECTED TO WHATSAPP</div>
+        </div>
+        <div class="agent-chip">
+          <div class="agent-avatar">TM</div>
+          <div class="who"><b>Tendai Marufu</b><span>Office Manager</span></div>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat-card"><div class="stat-label">Pending Review</div><div class="stat-value">14</div><div class="stat-delta">Placeholder</div></div>
+        <div class="stat-card"><div class="stat-label">Approved Today</div><div class="stat-value">6</div><div class="stat-delta">Placeholder</div></div>
+        <div class="stat-card"><div class="stat-label">Disbursed, Month</div><div class="stat-value"><small>$</small>18,400</div><div class="stat-delta">Placeholder</div></div>
+        <div class="stat-card"><div class="stat-label">Active Field Agents</div><div class="stat-value">9</div><div class="stat-delta">Placeholder</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="tabs" id="cat-tabs">
+            <button class="tab active" data-cat="all">All</button>
+            <button class="tab" data-cat="ssb">SSB</button>
+            <button class="tab" data-cat="ngo">Non-Gov</button>
+            <button class="tab" data-cat="sme">SME</button>
+          </div>
+          <div class="search-wrap">
+            <svg class="icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M16 16l-3.2-3.2"/></svg>
+            <input id="row-search" type="text" placeholder="Search applicant or reference…">
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr><th>Reference</th><th>Applicant</th><th>Category</th><th>Amount</th><th>Agent</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody id="app-rows">
+            <tr class="app-row" data-cat="ssb" data-name="Rutendo Chikwanha" data-ref="LOS-0114">
+              <td class="ref">LOS-0114</td>
+              <td class="applicant"><b>Rutendo Chikwanha</b><span>Civil Service, Payroll #4471</span></td>
+              <td><span class="cat ssb">SSB</span></td>
+              <td class="amt">$1,200.00</td>
+              <td class="agent-name">F. Sibanda</td>
+              <td><span class="stamp review">In Review</span></td>
+              <td class="row-actions">
+                <button class="icon-btn approve" title="Approve"><svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></button>
+                <button class="icon-btn reject" title="Reject"><svg class="icon" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+              </td>
+            </tr>
+            <tr class="app-row" data-cat="sme" data-name="Blessing Moyo" data-ref="LOS-0113">
+              <td class="ref">LOS-0113</td>
+              <td class="applicant"><b>Blessing Moyo</b><span>SME, Retail, Bulawayo</span></td>
+              <td><span class="cat sme">SME</span></td>
+              <td class="amt">$3,500.00</td>
+              <td class="agent-name">N. Dube</td>
+              <td><span class="stamp pending">Pending Docs</span></td>
+              <td class="row-actions">
+                <button class="icon-btn approve" title="Approve"><svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></button>
+                <button class="icon-btn reject" title="Reject"><svg class="icon" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+              </td>
+            </tr>
+            <tr class="app-row" data-cat="ngo" data-name="Tapiwa Nyathi" data-ref="LOS-0112">
+              <td class="ref">LOS-0112</td>
+              <td class="applicant"><b>Tapiwa Nyathi</b><span>NGO, Field Coordinator</span></td>
+              <td><span class="cat ngo">Non-Gov</span></td>
+              <td class="amt">$850.00</td>
+              <td class="agent-name">F. Sibanda</td>
+              <td><span class="stamp approved">Approved</span></td>
+              <td class="row-actions">
+                <button class="icon-btn approve" title="Approve"><svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></button>
+                <button class="icon-btn reject" title="Reject"><svg class="icon" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+              </td>
+            </tr>
+            <tr class="app-row" data-cat="ssb" data-name="Chiedza Mutasa" data-ref="LOS-0111">
+              <td class="ref">LOS-0111</td>
+              <td class="applicant"><b>Chiedza Mutasa</b><span>Civil Service, Payroll #2290</span></td>
+              <td><span class="cat ssb">SSB</span></td>
+              <td class="amt">$980.00</td>
+              <td class="agent-name">L. Chuma</td>
+              <td><span class="stamp rejected">Rejected</span></td>
+              <td class="row-actions">
+                <button class="icon-btn approve" title="Approve"><svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></button>
+                <button class="icon-btn reject" title="Reject"><svg class="icon" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+              </td>
+            </tr>
+            <tr class="app-row" data-cat="sme" data-name="Simbarashe Gumbo" data-ref="LOS-0110">
+              <td class="ref">LOS-0110</td>
+              <td class="applicant"><b>Simbarashe Gumbo</b><span>SME, Transport</span></td>
+              <td><span class="cat sme">SME</span></td>
+              <td class="amt">$2,150.00</td>
+              <td class="agent-name">N. Dube</td>
+              <td><span class="stamp review">In Review</span></td>
+              <td class="row-actions">
+                <button class="icon-btn approve" title="Approve"><svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></button>
+                <button class="icon-btn reject" title="Reject"><svg class="icon" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+              </td>
+            </tr>
+            <tr class="app-row" data-cat="ssb" data-name="Nyasha Chirwa" data-ref="LOS-0109">
+              <td class="ref">LOS-0109</td>
+              <td class="applicant"><b>Nyasha Chirwa</b><span>Civil Service, Payroll #5588</span></td>
+              <td><span class="cat ssb">SSB</span></td>
+              <td class="amt">$1,450.00</td>
+              <td class="agent-name">L. Chuma</td>
+              <td><span class="stamp pending">Pending Docs</span></td>
+              <td class="row-actions">
+                <button class="icon-btn approve" title="Approve"><svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg></button>
+                <button class="icon-btn reject" title="Reject"><svg class="icon" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15"/></svg></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="panel-note">
+          <span id="row-count">Showing 6 of 14 mock applications</span>
+          <span class="note-tag">STATIC PREVIEW</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DOCUMENT VIEWER ============ -->
+    <section class="view" id="view-documents">
+      <div class="topbar">
+        <div><h1>Document Viewer</h1><div class="meta" id="doc-meta">MOCKUP DATA · SELECT AN APPLICATION FROM THE QUEUE</div></div>
+      </div>
+      <div class="doc-layout">
+        <div class="doc-list">
+          <div class="doc-list-head"><b id="doc-applicant-name">No applicant selected</b><span id="doc-applicant-ref">N/A</span></div>
+          <button class="doc-item selected" data-doc="id">
+            <svg class="icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="1.5"/><circle cx="7.5" cy="9" r="1.5"/><path d="M6 13c.5-1.5 1.7-2 1.5-2s1 .5 1.5 2M12 8h3M12 11h3"/></svg>
+            National ID <span class="doc-status">Uploaded</span>
+          </button>
+          <button class="doc-item" data-doc="payslip">
+            <svg class="icon" viewBox="0 0 20 20"><rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h3"/></svg>
+            Payslip / Statement <span class="doc-status">Uploaded</span>
+          </button>
+          <button class="doc-item" data-doc="letter">
+            <svg class="icon" viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M3.5 5.5 10 11l6.5-5.5"/></svg>
+            Employer Letter <span class="doc-status">Uploaded</span>
+          </button>
+          <button class="doc-item" data-doc="form">
+            <svg class="icon" viewBox="0 0 20 20"><rect x="4" y="2.5" width="12" height="15" rx="1.5"/><path d="M7 6.5h6M7 9.5h6M7 12.5h4"/></svg>
+            Application Form <span class="doc-status">Uploaded</span>
+          </button>
+        </div>
+        <div class="doc-preview" id="doc-preview-pane">
+          <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+          <b>Preview not yet wired</b>
+          <p>This panel will render the applicant's uploaded document once storage is connected. For now it's a placeholder showing the selected file: <span id="doc-selected-name">National ID</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CALCULATOR ============ -->
+    <section class="view" id="view-calculator">
+      <div class="topbar">
+        <div><h1>Loan Calculators</h1><div class="meta">MOCKUP · FLAT-RATE ESTIMATE ONLY</div></div>
+      </div>
+      <div class="calc-wrap">
+        <div class="calc-card">
+          <div class="field">
+            <label for="calc-product">Product</label>
+            <select id="calc-product">
+              <option value="5|2" selected>SSB: Civil Service</option>
+              <option value="7|1.5">Non-Government</option>
+              <option value="9|3">SME</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="calc-rate">Monthly interest rate (%), admin-configurable</label>
+            <input id="calc-rate" type="number" value="5" min="0" step="0.1">
+          </div>
+          <div class="field">
+            <label for="calc-charges">Charges / fees, flat (USD), admin-configurable</label>
+            <input id="calc-charges" type="number" value="2" min="0" step="0.5">
+          </div>
+          <div class="field">
+            <label for="calc-principal">Principal (USD)</label>
+            <input id="calc-principal" type="number" value="1000" min="50" step="50">
+          </div>
+          <div class="field">
+            <label for="calc-term">Term (months)</label>
+            <input id="calc-term" type="number" value="6" min="1" max="36" step="1">
+          </div>
+          <button class="calc-btn" id="calc-run">
+            <svg class="icon" viewBox="0 0 20 20" style="stroke:#fff"><path d="M4 10.5l4 4 8-9"/></svg>
+            Calculate instalment
+          </button>
+        </div>
+        <div class="calc-card calc-result">
+          <div class="result-row"><span class="rlabel">Monthly instalment</span><span class="rval" id="calc-monthly">$0.00</span></div>
+          <div class="result-row"><span class="rlabel">Total interest</span><span class="rval" id="calc-interest">$0.00</span></div>
+          <div class="result-row"><span class="rlabel">Charges</span><span class="rval" id="calc-charges-out">$0.00</span></div>
+          <div class="result-row"><span class="rlabel">Total repayment</span><span class="rval" id="calc-total">$0.00</span></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:20px;">
+        <div class="panel-head"><b style="font-family:'Source Serif 4',serif; font-size:15px;">Amortisation schedule</b></div>
+        <table>
+          <thead><tr><th>Month</th><th>Opening Balance</th><th>Instalment</th><th>Interest</th><th>Principal</th><th>Closing Balance</th></tr></thead>
+          <tbody id="schedule-rows">
+            <tr><td colspan="6" style="color:var(--text-dim); text-align:center;">Run a calculation to generate the schedule</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ STUB VIEWS ============ -->
+    <section class="view" id="view-agents">
+      <div class="topbar">
+        <div><h1>Field Agents</h1><div class="meta">MOCKUP DATA · NOT CONNECTED</div></div>
+        <button class="calc-btn" id="add-agent-btn">
+          <svg class="icon" viewBox="0 0 20 20" style="stroke:#fff"><path d="M10 4v12M4 10h12"/></svg>
+          Add agent
+        </button>
+      </div>
+      <div class="panel">
+        <table>
+          <thead><tr><th>Name</th><th>Phone</th><th>Region</th><th>Active Apps</th><th>Approval Rate</th><th></th></tr></thead>
+          <tbody id="agent-rows">
+            <tr class="staff-row">
+              <td class="s-name">Farai Sibanda</td>
+              <td class="s-phone ref">+263 77 214 6630</td>
+              <td class="s-extra">Harare Central</td>
+              <td class="amt">7</td>
+              <td class="amt">86%</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+            <tr class="staff-row">
+              <td class="s-name">Nkosana Dube</td>
+              <td class="s-phone ref">+263 71 358 9042</td>
+              <td class="s-extra">Bulawayo</td>
+              <td class="amt">5</td>
+              <td class="amt">91%</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+            <tr class="staff-row">
+              <td class="s-name">Lindiwe Chuma</td>
+              <td class="s-phone ref">+263 78 902 3317</td>
+              <td class="s-extra">Mutare</td>
+              <td class="amt">9</td>
+              <td class="amt">78%</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+            <tr class="staff-row">
+              <td class="s-name">Tafadzwa Moyo</td>
+              <td class="s-phone ref">+263 77 604 8825</td>
+              <td class="s-extra">Gweru</td>
+              <td class="amt">3</td>
+              <td class="amt">94%</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="view-officers">
+      <div class="topbar">
+        <div><h1>Credit Officers</h1><div class="meta">MOCKUP DATA · NOT CONNECTED</div></div>
+        <button class="calc-btn" id="add-officer-btn">
+          <svg class="icon" viewBox="0 0 20 20" style="stroke:#fff"><path d="M10 4v12M4 10h12"/></svg>
+          Add officer
+        </button>
+      </div>
+      <div class="panel">
+        <table>
+          <thead><tr><th>Name</th><th>Phone</th><th>Branch</th><th>Reviewed, Month</th><th></th></tr></thead>
+          <tbody id="officer-rows">
+            <tr class="staff-row">
+              <td class="s-name">Tendai Marufu</td>
+              <td class="s-phone ref">+263 77 118 4402</td>
+              <td class="s-extra">Head Office</td>
+              <td class="amt">42</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+            <tr class="staff-row">
+              <td class="s-name">Ropafadzo Chigumira</td>
+              <td class="s-phone ref">+263 71 774 2201</td>
+              <td class="s-extra">Harare Central</td>
+              <td class="amt">37</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+            <tr class="staff-row">
+              <td class="s-name">Kudzai Mahachi</td>
+              <td class="s-phone ref">+263 78 331 5590</td>
+              <td class="s-extra">Bulawayo</td>
+              <td class="amt">29</td>
+              <td class="row-actions">
+                <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+                <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="view" id="view-settings">
+      <div class="topbar"><div><h1>Settings</h1><div class="meta">MOCKUP</div></div></div>
+      <div class="stub">
+        <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3M14.9 5.1l-1.4 1.4M6.5 13.5l-1.4 1.4M14.9 14.9l-1.4-1.4M6.5 6.5 5.1 5.1"/></svg>
+        <b>Nothing to configure yet</b>
+        <p>WhatsApp connection, loan product rules, and user roles will be managed from here.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // ---- View switching ----
+  const navItems = document.querySelectorAll('.nav-item');
+  const views = document.querySelectorAll('.view');
+  function showView(name){
+    views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    navItems.forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  }
+  navItems.forEach(item => item.addEventListener('click', () => showView(item.dataset.view)));
+
+  // ---- Category tab filtering ----
+  const tabs = document.querySelectorAll('#cat-tabs .tab');
+  const rows = document.querySelectorAll('#app-rows .app-row');
+  const rowCount = document.getElementById('row-count');
+  let activeCat = 'all';
+  let searchTerm = '';
+
+  function applyFilter(){
+    let visible = 0;
+    rows.forEach(row => {
+      const matchesCat = activeCat === 'all' || row.dataset.cat === activeCat;
+      const matchesSearch = !searchTerm ||
+        row.dataset.name.toLowerCase().includes(searchTerm) ||
+        row.dataset.ref.toLowerCase().includes(searchTerm);
+      const show = matchesCat && matchesSearch;
+      row.classList.toggle('hidden-row', !show);
+      if (show) visible++;
+    });
+    rowCount.textContent = `Showing ${visible} of 14 mock applications`;
+  }
+
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeCat = tab.dataset.cat;
+    applyFilter();
+  }));
+
+  document.getElementById('row-search').addEventListener('input', e => {
+    searchTerm = e.target.value.trim().toLowerCase();
+    applyFilter();
+  });
+
+  // ---- Row click -> open document viewer ----
+  rows.forEach(row => {
+    row.addEventListener('click', () => {
+      document.getElementById('doc-applicant-name').textContent = row.dataset.name;
+      document.getElementById('doc-applicant-ref').textContent = row.dataset.ref;
+      document.getElementById('doc-meta').textContent = `MOCKUP DATA · VIEWING ${row.dataset.ref}`;
+      showView('documents');
+    });
+  });
+
+  // ---- Approve / reject buttons update the stamp in place ----
+  document.querySelectorAll('.icon-btn.approve, .icon-btn.reject').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      const stamp = row.querySelector('.stamp');
+      const approving = btn.classList.contains('approve');
+      stamp.className = 'stamp ' + (approving ? 'approved' : 'rejected');
+      stamp.textContent = approving ? 'Approved' : 'Rejected';
+    });
+  });
+
+  // ---- Document list selection ----
+  document.querySelectorAll('.doc-item').forEach(doc => {
+    doc.addEventListener('click', () => {
+      document.querySelectorAll('.doc-item').forEach(d => d.classList.remove('selected'));
+      doc.classList.add('selected');
+      const label = doc.textContent.trim().split('\n')[0].trim();
+      document.getElementById('doc-selected-name').textContent = label;
+    });
+  });
+
+  // ---- Loan calculator ----
+  const productSelect = document.getElementById('calc-product');
+  const rateInput = document.getElementById('calc-rate');
+  const chargesInput = document.getElementById('calc-charges');
+
+  // Selecting a product loads its default rate/charges, but admin can still edit them
+  productSelect.addEventListener('change', () => {
+    const [rate, charges] = productSelect.value.split('|');
+    rateInput.value = rate;
+    chargesInput.value = charges;
+  });
+
+  document.getElementById('calc-run').addEventListener('click', () => {
+    const rate = (parseFloat(rateInput.value) || 0) / 100;
+    const charges = parseFloat(chargesInput.value) || 0;
+    const principal = parseFloat(document.getElementById('calc-principal').value) || 0;
+    const term = parseInt(document.getElementById('calc-term').value) || 1;
+
+    const totalInterest = principal * rate * term; // flat-rate interest, typical for these microloan products
+    const total = principal + totalInterest + charges;
+    const monthly = total / term;
+
+    document.getElementById('calc-monthly').textContent = '$' + monthly.toFixed(2);
+    document.getElementById('calc-interest').textContent = '$' + totalInterest.toFixed(2);
+    document.getElementById('calc-charges-out').textContent = '$' + charges.toFixed(2);
+    document.getElementById('calc-total').textContent = '$' + total.toFixed(2);
+
+    // Build amortisation schedule: equal instalments, interest spread evenly, charges on month 1
+    const scheduleBody = document.getElementById('schedule-rows');
+    scheduleBody.innerHTML = '';
+    let balance = principal;
+    const monthlyInterest = totalInterest / term;
+    const monthlyPrincipal = principal / term;
+    for (let m = 1; m <= term; m++){
+      const opening = balance;
+      const instalment = monthlyPrincipal + monthlyInterest + (m === 1 ? charges : 0);
+      balance = balance - monthlyPrincipal;
+      const closing = m === term ? 0 : balance;
+      const row = document.createElement('tr');
+      row.innerHTML = `<td class="ref">${m}</td><td class="amt">$${opening.toFixed(2)}</td><td class="amt">$${instalment.toFixed(2)}</td><td class="amt">$${monthlyInterest.toFixed(2)}</td><td class="amt">$${monthlyPrincipal.toFixed(2)}</td><td class="amt">$${closing.toFixed(2)}</td>`;
+      scheduleBody.appendChild(row);
+    }
+  });
+
+  // ---- Staff tables: edit / delete / add (Field Agents + Credit Officers) ----
+  function wireStaffTable(tbodyId, addBtnId, template){
+    const tbody = document.getElementById(tbodyId);
+
+    tbody.addEventListener('click', e => {
+      const editBtn = e.target.closest('.edit-btn');
+      const deleteBtn = e.target.closest('.delete-btn');
+      if (deleteBtn){
+        deleteBtn.closest('tr').remove();
+        return;
+      }
+      if (editBtn){
+        const row = editBtn.closest('tr');
+        const editableCells = row.querySelectorAll('.s-name, .s-phone, .s-extra');
+        const nowEditing = row.classList.toggle('editing');
+        editableCells.forEach(cell => cell.contentEditable = nowEditing);
+        if (nowEditing){
+          editBtn.innerHTML = '<svg class="icon" viewBox="0 0 20 20"><path d="M4 10.5l4 4 8-9"/></svg>';
+          editBtn.title = 'Save';
+          row.style.background = 'var(--accent-wash)';
+          editableCells[0].focus();
+        } else {
+          editBtn.innerHTML = '<svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg>';
+          editBtn.title = 'Edit';
+          row.style.background = '';
+        }
+      }
+    });
+
+    document.getElementById(addBtnId).addEventListener('click', () => {
+      const row = document.createElement('tr');
+      row.className = 'staff-row';
+      row.innerHTML = template;
+      tbody.appendChild(row);
+      row.querySelector('.edit-btn').click(); // drop straight into edit mode for the new entry
+    });
+  }
+
+  wireStaffTable('agent-rows', 'add-agent-btn',
+    `<td class="s-name">New agent</td><td class="s-phone ref">Add phone</td><td class="s-extra">Region</td><td class="amt">0</td><td class="amt">N/A</td>
+     <td class="row-actions">
+       <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+       <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+     </td>`);
+
+  wireStaffTable('officer-rows', 'add-officer-btn',
+    `<td class="s-name">New officer</td><td class="s-phone ref">Add phone</td><td class="s-extra">Branch</td><td class="amt">0</td>
+     <td class="row-actions">
+       <button class="icon-btn edit-btn" title="Edit"><svg class="icon" viewBox="0 0 20 20"><path d="M12.5 3.5l4 4L6 18H2v-4L12.5 3.5Z"/></svg></button>
+       <button class="icon-btn reject delete-btn" title="Delete"><svg class="icon" viewBox="0 0 20 20"><path d="M5 6h10M8 6V4h4v2M6 6l.7 9.5A1 1 0 0 0 7.7 16.5h4.6a1 1 0 0 0 1-1.5L14 6"/></svg></button>
+     </td>`);
+</script>
+</body>
+</html>
