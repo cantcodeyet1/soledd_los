@@ -41,7 +41,7 @@ export default function ForcePasswordReset({ onDone }: { onDone: () => void }) {
           type="password"
           value={newPassword}
           onChange={e => setNewPassword(e.target.value)}
-          className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm mb-4 focus:outline-none focus:border-accent"
+          className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card text-ink mb-4 focus:outline-none focus:border-accent"
           autoFocus
         />
         <label className="block text-xs uppercase tracking-wide text-text-dim mb-2">Confirm password</label>
@@ -49,7 +49,7 @@ export default function ForcePasswordReset({ onDone }: { onDone: () => void }) {
           type="password"
           value={confirmPassword}
           onChange={e => setConfirmPassword(e.target.value)}
-          className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm mb-4 focus:outline-none focus:border-accent"
+          className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card text-ink mb-4 focus:outline-none focus:border-accent"
         />
         {error && <div className="text-accent text-sm mb-4">{error}</div>}
         <button

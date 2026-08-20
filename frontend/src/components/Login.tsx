@@ -32,7 +32,7 @@ export default function Login({ onSuccess }: { onSuccess: (user: AuthUser) => vo
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm mb-4 focus:outline-none focus:border-accent"
+              className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card text-ink mb-4 focus:outline-none focus:border-accent"
               autoFocus
             />
           </>
@@ -43,7 +43,7 @@ export default function Login({ onSuccess }: { onSuccess: (user: AuthUser) => vo
           type="password"
           value={password}
           onChange={e => setPassword(e.target.value)}
-          className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm mb-4 focus:outline-none focus:border-accent"
+          className="w-full border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card text-ink mb-4 focus:outline-none focus:border-accent"
           autoFocus={!useOfficerLogin}
         />
         {error && <div className="text-accent text-sm mb-4">{error}</div>}
