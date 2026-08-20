@@ -3,7 +3,7 @@
 # paper-form-accurate PDF export (scripts/fill_forms.py), which a plain
 # Node buildpack won't provide — hence the Docker image.
 
-FROM node:20-slim
+FROM node:22-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-pip \
