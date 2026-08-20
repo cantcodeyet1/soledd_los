@@ -3,10 +3,11 @@ import { requestJson, resetOwnPassword } from '../services/api';
 import { AuthUser, CalculatorConfig, LoanProduct, LOAN_PRODUCT_LABELS, Officer, UserRole } from '../types';
 import Dropdown from './Dropdown';
 
-export default function ProfileView({ user, displayName, onDisplayNameChange }: {
+export default function ProfileView({ user, displayName, onDisplayNameChange, onReplayTour }: {
   user: AuthUser;
   displayName: string;
   onDisplayNameChange: (name: string) => void;
+  onReplayTour: () => void;
 }) {
   const [nameDraft, setNameDraft] = useState(displayName);
   const [nameSaved, setNameSaved] = useState(false);
@@ -44,6 +45,16 @@ export default function ProfileView({ user, displayName, onDisplayNameChange }: 
           </button>
         </form>
         <div className="text-xs text-text-dim mt-2.5">Shown as your initials in the top-right corner of the dashboard.</div>
+      </div>
+
+      <div className="border border-rule rounded-2xl p-6 bg-paper mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="font-display font-bold text-base mb-1">App walkthrough</h2>
+          <div className="text-xs text-text-dim">A quick tour of the dashboard's main pages.</div>
+        </div>
+        <button onClick={onReplayTour} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors whitespace-nowrap">
+          Replay walkthrough
+        </button>
       </div>
 
       {isOfficerAccount ? <OfficerPasswordCard /> : <SharedPasswordCard />}

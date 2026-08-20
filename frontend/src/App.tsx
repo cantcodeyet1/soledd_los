@@ -5,6 +5,7 @@ import CalculatorView from './components/CalculatorView';
 import AgentsView from './components/AgentsView';
 import ProfileView from './components/ProfileView';
 import ForcePasswordReset from './components/ForcePasswordReset';
+import OnboardingTour, { ONBOARDING_KEY } from './components/OnboardingTour';
 import { getStoredUser, clearSession } from './services/api';
 import { AuthUser } from './types';
 import { useTheme } from './hooks/useTheme';
@@ -28,6 +29,7 @@ export default function App() {
   const [view, setView] = useState<View>('queue');
   const [menuOpen, setMenuOpen] = useState(false);
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('soledd_display_name') || getStoredUser()?.name || 'Tendai Marufu');
+  const [showTour, setShowTour] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -137,9 +139,12 @@ export default function App() {
             user={user}
             displayName={displayName}
             onDisplayNameChange={updateDisplayName}
+            onReplayTour={() => setShowTour(true)}
           />
         )}
       </main>
+
+      {showTour && <OnboardingTour onDismiss={() => setShowTour(false)} />}
     </div>
   );
 }
