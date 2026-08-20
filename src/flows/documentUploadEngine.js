@@ -20,9 +20,13 @@ function uploadPromptMessage(label) {
   };
 }
 
-/** Call when an application has just been created, to start the document sequence. */
-function start(categoryCode) {
-  const docs = REQUIRED_DOCUMENTS[categoryCode] || [];
+/**
+ * Call when an application (or agent application) has just been created, to
+ * start the document sequence. `docsKey` looks up REQUIRED_DOCUMENTS —
+ * either a loan category code, or 'AGENT_APPLICATION'.
+ */
+function start(docsKey) {
+  const docs = REQUIRED_DOCUMENTS[docsKey] || [];
   if (docs.length === 0) {
     return { messages: [], nextStep: null, endFlow: true };
   }
@@ -35,17 +39,20 @@ function start(categoryCode) {
 
 /** Handles one incoming message while collecting documents. */
 async function handleUpload({ text, buttonId, media, flowData }) {
-  const docs = REQUIRED_DOCUMENTS[flowData.categoryCode] || [];
+  const isAgentApplication = !!flowData.agentApplicationId;
+  const docsKey = isAgentApplication ? 'AGENT_APPLICATION' : flowData.categoryCode;
+  const docs = REQUIRED_DOCUMENTS[docsKey] || [];
   const label = docs[flowData.docIndex];
 
   if (buttonId === 'SKIP_DOC' || /^skip$/i.test((text || '').trim())) {
-    return advance(docs, flowData);
+    return advance(docs, flowData, isAgentApplication);
   }
 
   if (media) {
     try {
       await documentStorage.storeDocument({
         applicationId: flowData.applicationId,
+        agentApplicationId: flowData.agentApplicationId,
         label,
         mediaId: media.id,
       });
@@ -58,7 +65,7 @@ async function handleUpload({ text, buttonId, media, flowData }) {
       };
     }
 
-    return advance(docs, flowData, `✅ Received: ${label}`);
+    return advance(docs, flowData, isAgentApplication, `✅ Received: ${label}`);
   }
 
   return {
@@ -68,17 +75,16 @@ async function handleUpload({ text, buttonId, media, flowData }) {
   };
 }
 
-function advance(docs, flowData, prefix = null) {
+function advance(docs, flowData, isAgentApplication, prefix = null) {
   const nextIndex = flowData.docIndex + 1;
 
   if (nextIndex >= docs.length) {
     const messages = [];
     if (prefix) messages.push({ type: 'text', body: prefix });
-    messages.push({
-      type: 'interactive',
-      body: `All done! Thank you. Your documents for ${flowData.referenceNumber || 'your application'} have been received. A credit officer will be in touch.`,
-      buttons: [RETURN_BUTTON],
-    });
+    const completionBody = isAgentApplication
+      ? "All done! Thank you. Your agent application and documents have been received. A staff member will review your application and revert within 48 hours."
+      : `All done! Thank you. Your documents for ${flowData.referenceNumber || 'your application'} have been received. A credit officer will be in touch.`;
+    messages.push({ type: 'interactive', body: completionBody, buttons: [RETURN_BUTTON] });
     return { messages, endFlow: true };
   }
 

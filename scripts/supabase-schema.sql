@@ -210,3 +210,15 @@ alter table credit_officers add column if not exists role text not null default 
 alter table credit_officers add column if not exists must_reset_password boolean not null default true;
 alter table credit_officers drop constraint if exists credit_officers_role_check;
 alter table credit_officers add constraint credit_officers_role_check check (role in ('STAFF', 'ADMIN'));
+
+-- Agent applications ("Become an Agent" via WhatsApp) now collect documents
+-- too, same as loan applications, so `documents` needs to be able to point
+-- at either kind of application. Exactly one of the two FKs is set per row.
+alter table documents alter column application_id drop not null;
+alter table documents add column if not exists agent_application_id uuid references agent_applications(id);
+create index if not exists idx_documents_agent_application on documents(agent_application_id);
+alter table documents drop constraint if exists documents_one_parent_check;
+alter table documents add constraint documents_one_parent_check check (
+  (application_id is not null and agent_application_id is null) or
+  (application_id is null and agent_application_id is not null)
+);

@@ -130,6 +130,24 @@ router.patch('/applications/:id/status', async (req, res) => {
   }
 });
 
+router.patch('/applications/:id/agent', async (req, res) => {
+  try {
+    const { agent_phone } = req.body;
+    const { data: application, error } = await supabase
+      .from('applications')
+      .update({ agent_phone: agent_phone || null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error || !application) return res.status(404).json({ error: 'Not found' });
+    res.json({ application });
+  } catch (err) {
+    console.error('PATCH /applications/:id/agent error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/applications/:id/loan-terms', async (req, res) => {
   try {
     const { loan_product, borrower_type, disbursement_date } = req.body;
@@ -301,7 +319,11 @@ router.post('/agents/:id/resend-otp', async (req, res) => {
 
 router.patch('/agents/:id', async (req, res) => {
   try {
-    await agentService.setActive(req.params.id, req.body.active);
+    const { active, phoneNumber, name, region } = req.body;
+    if (active !== undefined) await agentService.setActive(req.params.id, active);
+    if (phoneNumber !== undefined || name !== undefined || region !== undefined) {
+      await agentService.updateAgent(req.params.id, { phoneNumber, name, region });
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -313,6 +335,81 @@ router.delete('/agents/:id', async (req, res) => {
     await agentService.removeAgent(req.params.id);
     res.json({ ok: true });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/agents/export/excel', async (req, res) => {
+  try {
+    const agents = await agentService.listAgents();
+    const withPerformance = await Promise.all(agents.map(async a => ({
+      ...a,
+      performance: await agentService.agentPerformance(a.phone_number),
+    })));
+    const buffer = await crystalExport.buildAgentsExport(withPerformance);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="soledd_field_agents_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('GET /agents/export/excel error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/agents/commission-rate', requireAdmin, async (req, res) => {
+  try {
+    res.json({ pct: await agentService.getCommissionRatePct() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/agents/commission-rate', requireAdmin, async (req, res) => {
+  try {
+    const { pct } = req.body;
+    if (pct === undefined || Number.isNaN(Number(pct))) return res.status(400).json({ error: 'pct is required' });
+    await agentService.setCommissionRatePct(pct);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Agent Applications ("Become an Agent" WhatsApp flow) ──────────────────
+
+router.get('/agent-applications/:id/documents', async (req, res) => {
+  try {
+    const docs = await documentStorage.listAgentApplicationDocuments(req.params.id);
+    const withUrls = await Promise.all(docs.map(async d => ({
+      ...d,
+      url: await documentStorage.getSignedUrl(d.storage_path),
+    })));
+    res.json({ documents: withUrls });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/agent-applications', async (req, res) => {
+  try {
+    const applications = await agentService.listAgentApplications(req.query.status);
+    res.json({ applications });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/agent-applications/:id/status', async (req, res) => {
+  try {
+    const { status, note } = req.body;
+    if (!['APPROVED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ error: 'status must be APPROVED or REJECTED' });
+    }
+    const application = await agentService.decideAgentApplication(req.params.id, status, note);
+    if (!application) return res.status(404).json({ error: 'Not found' });
+    res.json({ application });
+  } catch (err) {
+    console.error('PATCH /agent-applications/:id/status error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

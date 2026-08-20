@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { requestJson, requestBlob, downloadBlob } from '../services/api';
 import {
-  Application, Stats, CATEGORY_LABELS, CategoryCode, ApplicationStatus, Document,
+  Application, Stats, CATEGORY_LABELS, CategoryCode, ApplicationStatus, Document, Agent,
   LoanProduct, BorrowerType, LOAN_PRODUCT_LABELS, CalculatorResult as CalculatorResultType,
 } from '../types';
 import CalculatorResult, { AmortisationTable, CalculatorResultSkeleton } from './CalculatorResult';
 import Dropdown from './Dropdown';
 import ViewToggle, { ViewMode } from './ViewToggle';
+import DocsSection from './DocsSection';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -113,6 +114,12 @@ export default function ApplicationsView() {
     await requestJson(`/applications/${id}/loan-terms`, { method: 'PATCH', body: JSON.stringify(terms) });
     setAllApps(prev => prev.map(a => a.id === id ? { ...a, ...terms } : a));
     setSelected(prev => prev && prev.id === id ? { ...prev, ...terms } : prev);
+  }
+
+  async function updateAgentAssignment(id: string, agentPhone: string | null) {
+    await requestJson(`/applications/${id}/agent`, { method: 'PATCH', body: JSON.stringify({ agent_phone: agentPhone }) });
+    setAllApps(prev => prev.map(a => a.id === id ? { ...a, agent_phone: agentPhone } : a));
+    setSelected(prev => prev && prev.id === id ? { ...prev, agent_phone: agentPhone } : prev);
   }
 
   async function confirmPendingAction(note?: string) {
@@ -308,6 +315,7 @@ export default function ApplicationsView() {
           onRequestStatusChange={mode => setPendingAction({ app: selected, mode })}
           onExportPdf={() => exportPdf(selected.id, selected.reference_number)}
           onLoanTermsChange={terms => updateLoanTerms(selected.id, terms)}
+          onAssignAgent={phone => updateAgentAssignment(selected.id, phone)}
         />
       )}
 
@@ -546,12 +554,13 @@ function MiniStat({ value, label, color }: { value: string; label: string; color
   );
 }
 
-function ApplicationDetail({ application, onClose, onRequestStatusChange, onExportPdf, onLoanTermsChange }: {
+function ApplicationDetail({ application, onClose, onRequestStatusChange, onExportPdf, onLoanTermsChange, onAssignAgent }: {
   application: Application;
   onClose: () => void;
   onRequestStatusChange: (mode: 'approve' | 'reject') => void;
   onExportPdf: () => void;
   onLoanTermsChange: (terms: Partial<Pick<Application, 'loan_product' | 'borrower_type' | 'disbursement_date'>>) => void;
+  onAssignAgent: (agentPhone: string | null) => Promise<void>;
 }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [docsLoading, setDocsLoading] = useState(true);
@@ -585,7 +594,10 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
           <Field label="Loan Amount" value={`$${Number(application.loan_amount).toFixed(2)}`} />
           <Field label="Repayment Period" value={`${application.repayment_months} months`} />
           <Field label="Applicant Phone" value={application.applicant_phone} />
-          <Field label="Field Agent" value={application.agent_phone || '-'} />
+        </div>
+
+        <div className="mb-6">
+          <FieldAgentAssignment agentPhone={application.agent_phone} onAssign={onAssignAgent} />
         </div>
 
         <LoanRepaymentCalculator application={application} onTermsChange={onLoanTermsChange} />
@@ -602,33 +614,7 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
           </div>
         )}
 
-        <div className="border-t border-rule pt-4 mb-6">
-          <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Documents Submitted via WhatsApp</div>
-          {docsLoading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="h-9 rounded-lg skeleton animate-shimmer" />
-              ))}
-            </div>
-          )}
-          {!docsLoading && documents.length === 0 && <div className="text-sm text-text-dim">No documents received yet.</div>}
-          {!docsLoading && documents.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {documents.map(d => (
-                <a
-                  key={d.id}
-                  href={d.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between border border-rule rounded-lg px-3 py-2 text-sm hover:border-accent transition-colors"
-                >
-                  <span>{d.label}</span>
-                  <span className="text-xs text-accent-bright font-semibold">View</span>
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
+        <DocsSection documents={documents} loading={docsLoading} />
 
         <div className="flex gap-2 mb-4 flex-wrap">
           <button onClick={() => onRequestStatusChange('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
@@ -661,6 +647,52 @@ function extraDetailEntries(extraDetails: Record<string, any> | null | undefined
 
 function humanizeFieldKey(key: string): string {
   return key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+}
+
+function FieldAgentAssignment({ agentPhone, onAssign }: { agentPhone: string | null; onAssign: (phone: string | null) => Promise<void> }) {
+  const [agents, setAgents] = useState<Agent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // All agents, not just verified+active — a just-added agent (still
+    // pending OTP) should still be assignable, not invisible in this list.
+    requestJson('/agents').then(r => setAgents(r.agents));
+  }, []);
+
+  if (!agents) return <div className="h-14 rounded-lg skeleton animate-shimmer" />;
+
+  function agentLabel(a: Agent) {
+    const status = !a.verified ? ' (pending OTP)' : !a.active ? ' (deactivated)' : '';
+    return `${a.name || a.phone_number} (${a.phone_number})${status}`;
+  }
+
+  const options = [
+    { value: '', label: 'Unassigned' },
+    ...agents.map(a => ({ value: a.phone_number, label: agentLabel(a) })),
+  ];
+
+  const currentKnown = agentPhone && agents.some(a => a.phone_number === agentPhone);
+
+  async function handleChange(v: string) {
+    setError(null);
+    try {
+      await onAssign(v || null);
+    } catch (err: any) {
+      setError(err.message || 'Could not assign agent.');
+    }
+  }
+
+  return (
+    <div>
+      <Dropdown
+        label="Field Agent"
+        value={agentPhone && currentKnown ? agentPhone : ''}
+        onChange={handleChange}
+        options={agentPhone && !currentKnown ? [{ value: agentPhone, label: `${agentPhone} (not in agent list)` }, ...options] : options}
+      />
+      {error && <div className="text-xs text-accent mt-1.5">{error}</div>}
+    </div>
+  );
 }
 
 function Field({ label, value }: { label: string; value: string }) {

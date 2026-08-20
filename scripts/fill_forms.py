@@ -115,6 +115,73 @@ class FormFiller:
         self.pdf.close()
 
 
+# ─── Field resolution, tolerant of both the current combined-question
+# schema (nameLine, contactLine, bankDetails — see applicationQuestions.js)
+# and the older granular schema some existing applications were captured
+# with (title/firstNames/surname, phone/residentialAddress, bankName/
+# bankAccount). Falls back to the application's own DB columns last, since
+# those always exist regardless of which schema extra_details used.
+
+def _first_nonempty(answers, keys):
+    for k in keys:
+        v = answers.get(k)
+        if v:
+            return v
+    return ""
+
+
+def resolve_full_name(answers, application):
+    """Combined 'Mr Tinashe Moyo' style — for forms where First Names holds the whole name."""
+    combined = _first_nonempty(answers, ["nameLine"])
+    if combined:
+        return combined
+    parts = [answers.get("title", ""), answers.get("firstNames", ""), answers.get("surname", "")]
+    combined = " ".join(p for p in parts if p).strip()
+    if combined:
+        return combined
+    return application.get("fullName", "") or ""
+
+
+def resolve_first_names(answers, application):
+    """Title + first name only — for forms with a separate Surname box (SME)."""
+    if answers.get("nameLine"):
+        return answers["nameLine"]
+    parts = [answers.get("title", ""), answers.get("firstNames", "")]
+    combined = " ".join(p for p in parts if p).strip()
+    if combined:
+        return combined
+    full = application.get("fullName", "") or ""
+    surname = resolve_surname(answers, application)
+    if full and surname and full.endswith(surname):
+        return full[: -len(surname)].strip()
+    return full
+
+
+def resolve_surname(answers, application):
+    return answers.get("surname") or application.get("employerName", "") or ""
+
+
+def resolve_national_id(answers, application):
+    return _first_nonempty(answers, ["nationalId"]) or application.get("nationalId", "") or ""
+
+
+def resolve_contact(answers):
+    combined = _first_nonempty(answers, ["contactLine", "personalDetails"])
+    if combined:
+        return combined
+    parts = [answers.get("phone", ""), answers.get("residentialAddress", "")]
+    return ", ".join(p for p in parts if p)
+
+
+def resolve_bank(answers):
+    combined = _first_nonempty(answers, ["bankDetails"])
+    if combined:
+        return combined
+    name, acct = answers.get("bankName", ""), answers.get("bankAccount", "")
+    parts = [p for p in [name, f"Account {acct}" if acct else ""] if p]
+    return ", ".join(parts)
+
+
 # Column x-positions (PDF points) for the government form's Financial
 # Schedule table, and the blank data row's top/bottom — both hand-measured
 # from the template via pdfplumber (see scripts/pdf_layout_utils.py's
@@ -157,7 +224,7 @@ def fill_government(payload, output_path):
     # nameLine holds the combined "Mr Tinashe Moyo" answer — placed across the
     # First Names box; the separate Surname box is left blank since the name
     # isn't split into parts anymore (question grouping — see applicationQuestions.js).
-    name_line = answers.get("nameLine", "")
+    name_line = resolve_full_name(answers, application)
     title = name_line.strip().split(" ")[0].lower() if name_line else ""
     if title.startswith("mr"):
         f.mark_choice(0, "First Names", "Mr.")
@@ -165,7 +232,7 @@ def fill_government(payload, output_path):
         f.mark_choice(0, "First Names", "Mrs.")
     f.text_right(0, "First Names", name_line)
 
-    f.text_right(0, "ID", answers.get("nationalId", ""), dx=30)
+    f.text_right(0, "ID", resolve_national_id(answers, application), dx=30)
 
     # Placed by the input box's own rect, not text_right off the label — the
     # label sits above a bordered box here rather than beside a fill line, so
@@ -177,11 +244,11 @@ def fill_government(payload, output_path):
         f.text_row(0, 287, 136.2, 153.0, phone, size=9)
 
     # contactLine ("phone, address") goes into the larger Residential Address box.
-    f.text_below(0, "Residential Address", answers.get("contactLine", ""), dy=14, width_chars=60)
+    f.text_below(0, "Residential Address", resolve_contact(answers), dy=14, width_chars=60)
     f.text_below(0, "Name, Address and phone", answers.get("nextOfKin", ""), dy=10, width_chars=60)
 
     # bankDetails ("bank name, account number") goes into the Name of Bank box.
-    f.text_below(0, "Name of Bank", answers.get("bankDetails", ""), dy=30, width_chars=40)
+    f.text_below(0, "Name of Bank", resolve_bank(answers), dy=30, width_chars=40)
 
     src = answers.get("sourceOfIncome", "")
     for opt in ["Monthly Salary", "Remittances from Diaspora", "Sale of Asset", "Other"]:
@@ -204,7 +271,7 @@ def fill_sme(payload, output_path):
     # nameLine here is just "Mr Chipo" (title + first name only) — surname /
     # registered company name stays its own question since it also feeds the
     # employer_name database column.
-    name_line = answers.get("nameLine", "")
+    name_line = resolve_first_names(answers, application)
     title = name_line.strip().split(" ")[0].lower() if name_line else ""
     if title.startswith("mr"):
         f.mark_choice(0, "First Names", "Mr.")
@@ -212,8 +279,8 @@ def fill_sme(payload, output_path):
         f.mark_choice(0, "First Names", "Mrs.")
 
     f.text_right(0, "First Names", name_line)
-    f.text_below(0, "Surname/Registered", answers.get("surname", ""), dy=14, occurrence=0)
-    f.text_right(0, "ID", answers.get("nationalId", ""), dx=65)
+    f.text_below(0, "Surname/Registered", resolve_surname(answers, application), dy=14, occurrence=0)
+    f.text_right(0, "ID", resolve_national_id(answers, application), dx=65)
     f.text_below(0, "Residential address of Applicant and business address", answers.get("address", ""), dy=16, width_chars=90)
     f.text_below(0, "employer and attach payslip and bank statement.", answers.get("repaymentSource", ""), dy=16, width_chars=90)
     f.text_below(0, "Name, Address and phone of the next of kin", answers.get("nextOfKin", ""), dy=16, width_chars=90)
@@ -227,7 +294,7 @@ def fill_sme(payload, output_path):
     f.text_right(0, "your debts?", answers.get("blacklisted", ""), dx=10)
 
     # bankDetails ("bank name, branch, account") goes into the Name of Bank box.
-    f.text_below(0, "Name of Bank", answers.get("bankDetails", ""), dy=20, width_chars=60)
+    f.text_below(0, "Name of Bank", resolve_bank(answers), dy=20, width_chars=60)
 
     f.text_below(0, "Purpose of loan) Attach all necessary documentation)", answers.get("purposeOfLoan", ""), dy=16, width_chars=90)
     f.text_below(0, "How many times have you successfully done this transaction? Please provide details", answers.get("transactionHistory", ""), dy=16, width_chars=90)
@@ -242,6 +309,7 @@ def fill_sme(payload, output_path):
 
 def fill_private_sector(payload, output_path):
     answers = payload.get("answers", {})
+    application = payload.get("application", {})
     computed = payload.get("computed")
     f = FormFiller(f"{FORMS_DIR}/private_sector_application.pdf")
 
@@ -249,9 +317,9 @@ def fill_private_sector(payload, output_path):
     # nameLine ("Mr Tapiwa Ncube") goes across First Names; Surname is left
     # blank. personalDetails ("dob, address, contact") goes into the larger
     # Physical Address box — question grouping, see applicationQuestions.js.
-    f.text_right(0, "First Names", answers.get("nameLine", ""))
-    f.text_right(0, "ID / Passport No.", answers.get("nationalId", ""))
-    f.text_below(0, "Physical Address", answers.get("personalDetails", ""), dy=14, occurrence=0, width_chars=60)
+    f.text_right(0, "First Names", resolve_full_name(answers, application))
+    f.text_right(0, "ID / Passport No.", resolve_national_id(answers, application))
+    f.text_below(0, "Physical Address", answers.get("personalDetails") or resolve_contact(answers), dy=14, occurrence=0, width_chars=60)
     f.text_right(0, "Full names", answers.get("nextOfKin", ""), dx=10)
 
     f.text_right(0, "Marital", answers.get("maritalStatus", ""), dx=40)

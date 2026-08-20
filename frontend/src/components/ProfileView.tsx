@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { requestJson, resetOwnPassword } from '../services/api';
 import { AuthUser, CalculatorConfig, LoanProduct, LOAN_PRODUCT_LABELS, Officer, UserRole } from '../types';
+import Dropdown from './Dropdown';
 
 export default function ProfileView({ user, displayName, onDisplayNameChange }: {
   user: AuthUser;
@@ -48,7 +49,49 @@ export default function ProfileView({ user, displayName, onDisplayNameChange }: 
       {isOfficerAccount ? <OfficerPasswordCard /> : <SharedPasswordCard />}
 
       {isAdmin && <CalculatorRatesCard />}
+      {isAdmin && <AgentCommissionCard />}
       {isAdmin && <CreditOfficersCard />}
+    </div>
+  );
+}
+
+function AgentCommissionCard() {
+  const [pct, setPct] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    requestJson('/agents/commission-rate').then(r => setPct(r.pct));
+  }, []);
+
+  async function save() {
+    if (pct === null) return;
+    setSaving(true);
+    await requestJson('/agents/commission-rate', { method: 'PUT', body: JSON.stringify({ pct }) });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  if (pct === null) return null;
+
+  return (
+    <div className="border border-rule rounded-2xl p-6 bg-paper mt-6">
+      <h2 className="font-display font-bold text-base mb-1">Field agent commission</h2>
+      <div className="text-xs text-text-dim mb-4">Percentage of the loan amount paid to the referring agent on approved loans.</div>
+      <div className="flex items-end gap-3">
+        <div className="flex-1 max-w-[160px]">
+          <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">Commission (%)</label>
+          <input
+            type="number" step={0.1} value={pct}
+            onChange={e => setPct(Number(e.target.value))}
+            className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-card"
+          />
+        </div>
+        <button onClick={save} disabled={saving} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink disabled:opacity-60">
+          {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -248,6 +291,24 @@ function CalculatorRatesCard() {
 
 const ROLE_LABELS: Record<UserRole, string> = { STAFF: 'Staff', ADMIN: 'Administrator' };
 
+function inviteMailto(notice: { name: string; email: string; tempPassword: string }): string {
+  const firstName = notice.name.trim().split(/\s+/)[0] || notice.name;
+  const subject = 'Your Soledd Loans dashboard login';
+  const body = [
+    `Hi ${firstName},`,
+    '',
+    "You've been added as a credit officer on the Soledd Loans dashboard. Here's your temporary login:",
+    '',
+    `Email: ${notice.email}`,
+    `Temporary password: ${notice.tempPassword}`,
+    '',
+    "Sign in with the link I gave you. You'll be asked to set your own password on first login.",
+    '',
+    'This password is temporary; please don\'t share it beyond your own login.',
+  ].join('\n');
+  return `mailto:${notice.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 function CreditOfficersCard() {
   const [officers, setOfficers] = useState<Officer[]>([]);
   const [showAddOfficer, setShowAddOfficer] = useState(false);
@@ -308,14 +369,17 @@ function CreditOfficersCard() {
         <div className="border border-accent-bright/40 bg-accent-wash rounded-xl p-4 mb-4 text-sm">
           <div className="font-semibold mb-1">{inviteNotice.name} can now sign in</div>
           {inviteNotice.emailSent ? (
-            <div className="text-text-dim">An invite with a temporary password was emailed to {inviteNotice.email}.</div>
+            <div className="text-text-dim mb-2">An invite with a temporary password was emailed to {inviteNotice.email}.</div>
           ) : (
-            <div>
+            <div className="mb-2">
               <div className="text-text-dim mb-1">Email wasn't sent (no email service configured yet). Share this temporary password with them directly:</div>
               <div className="font-mono-brand font-bold text-base">{inviteNotice.tempPassword}</div>
             </div>
           )}
-          <button onClick={() => setInviteNotice(null)} className="text-xs text-accent-bright font-semibold mt-2">Dismiss</button>
+          <div className="flex items-center gap-3">
+            <a href={inviteMailto(inviteNotice)} className="text-xs font-semibold text-accent-bright hover:underline">Open in Email App</a>
+            <button onClick={() => setInviteNotice(null)} className="text-xs text-accent-bright font-semibold">Dismiss</button>
+          </div>
         </div>
       )}
 
@@ -333,12 +397,13 @@ function CreditOfficersCard() {
             <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">Branch</label>
             <input value={officerBranch} onChange={e => setOfficerBranch(e.target.value)} className="border border-rule rounded-lg px-3 py-2 text-sm w-full bg-paper" />
           </div>
-          <div className="min-w-[120px]">
-            <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">Role</label>
-            <select value={officerRole} onChange={e => setOfficerRole(e.target.value as UserRole)} className="border border-rule rounded-lg px-3 py-2 text-sm w-full bg-paper">
-              <option value="STAFF">Staff</option>
-              <option value="ADMIN">Administrator</option>
-            </select>
+          <div className="min-w-[140px]">
+            <Dropdown
+              label="Role"
+              value={officerRole}
+              onChange={setOfficerRole}
+              options={[{ value: 'STAFF', label: 'Staff' }, { value: 'ADMIN', label: 'Administrator' }]}
+            />
           </div>
           <button type="submit" disabled={officerSaving} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60 transition-colors">
             {officerSaving ? 'Adding…' : 'Add & Invite'}

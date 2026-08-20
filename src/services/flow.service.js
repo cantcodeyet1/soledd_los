@@ -70,7 +70,10 @@ async function dispatch(customerPhone, { text, buttonId, media, customer, state,
     }
 
     if (agentApplicationData) {
-      await createAgentApplication(customerPhone, agentApplicationData);
+      const agentApplication = await createAgentApplication(customerPhone, agentApplicationData);
+      if (updatedData) {
+        updatedData = { ...updatedData, agentApplicationId: agentApplication?.id || null };
+      }
     }
 
     if (outgoing.length > 0) {

@@ -52,6 +52,13 @@ const REQUIRED_DOCUMENTS = {
     'Signed application form',
     'Signed loan agreement',
   ],
+  // "Become an Agent" — vetting documents, not a loan category, but reuses
+  // the same generic document-collection engine.
+  AGENT_APPLICATION: [
+    'Certified copy of ID',
+    'Proof of residence (water/ZESA bill)',
+    'Recent passport-size photo',
+  ],
 };
 
 function requiredDocumentsMessage(categoryCode) {

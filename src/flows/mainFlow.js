@@ -196,12 +196,13 @@ async function handleStep(step, { text, buttonId, media, flowData, customer }) {
     }
 
     const merged = { ...flowData, area };
+    const docStart = documentUploadEngine.start('AGENT_APPLICATION');
 
     return {
-      messages: [finalWithReturn(
-        'Thank you! A staff member will review your application and revert within 48 hours.'
-      )],
-      endFlow: true,
+      messages: docStart.messages,
+      nextStep: docStart.nextStep,
+      endFlow: docStart.endFlow || false,
+      updatedData: { ...(docStart.updatedData || {}) },
       agentApplicationData: merged,
     };
   }

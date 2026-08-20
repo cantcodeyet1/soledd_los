@@ -20,15 +20,18 @@ function slugify(label) {
 }
 
 /**
- * Downloads a WhatsApp media object and stores it for the given application.
- * mediaId/mimeType come from the inbound webhook message.
+ * Downloads a WhatsApp media object and stores it against either a loan
+ * application or an agent application (exactly one of applicationId /
+ * agentApplicationId should be set). mediaId/mimeType come from the inbound
+ * webhook message.
  */
-async function storeDocument({ applicationId, label, mediaId }) {
+async function storeDocument({ applicationId, agentApplicationId, label, mediaId }) {
   const { url, mimeType } = await whatsappService.getMediaUrl(mediaId);
   const buffer = await whatsappService.downloadMedia(url);
 
+  const parentId = applicationId || agentApplicationId;
   const ext = EXT_BY_MIME[mimeType] || 'bin';
-  const path = `${applicationId}/${slugify(label)}-${Date.now()}.${ext}`;
+  const path = `${parentId}/${slugify(label)}-${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage.from('documents').upload(path, buffer, {
     contentType: mimeType,
@@ -38,7 +41,11 @@ async function storeDocument({ applicationId, label, mediaId }) {
 
   const { data, error } = await supabase
     .from('documents')
-    .insert([{ application_id: applicationId, label, storage_path: path, mime_type: mimeType }])
+    .insert([{
+      application_id: applicationId || null,
+      agent_application_id: agentApplicationId || null,
+      label, storage_path: path, mime_type: mimeType,
+    }])
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -56,6 +63,16 @@ async function listDocuments(applicationId) {
   return data;
 }
 
+async function listAgentApplicationDocuments(agentApplicationId) {
+  const { data, error } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('agent_application_id', agentApplicationId)
+    .order('uploaded_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 /** Signed URL for the dashboard to view/download a stored document. */
 async function getSignedUrl(storagePath, expiresInSeconds = 300) {
   const { data, error } = await supabase.storage.from('documents').createSignedUrl(storagePath, expiresInSeconds);
@@ -63,4 +80,4 @@ async function getSignedUrl(storagePath, expiresInSeconds = 300) {
   return data.signedUrl;
 }
 
-module.exports = { storeDocument, listDocuments, getSignedUrl };
+module.exports = { storeDocument, listDocuments, listAgentApplicationDocuments, getSignedUrl };

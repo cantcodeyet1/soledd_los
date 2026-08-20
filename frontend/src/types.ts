@@ -63,6 +63,18 @@ export interface Document {
   url: string;
 }
 
+export type AgentApplicationStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface AgentApplication {
+  id: string;
+  applicant_phone: string;
+  full_name: string;
+  national_id: string;
+  area: string;
+  status: AgentApplicationStatus;
+  created_at: string;
+}
+
 export type UserRole = 'STAFF' | 'ADMIN';
 
 export interface Officer {

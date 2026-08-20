@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { requestJson } from '../services/api';
-import { Agent, Application, CATEGORY_LABELS } from '../types';
+import { requestJson, requestBlob, downloadBlob } from '../services/api';
+import { Agent, AgentApplication, Application, CATEGORY_LABELS, Document as DocType } from '../types';
 import ViewToggle, { ViewMode } from './ViewToggle';
+import DocsSection from './DocsSection';
 
 type AgentStatus = 'PENDING' | 'ACTIVE' | 'DEACTIVATED';
 
@@ -113,6 +114,16 @@ export default function AgentsView() {
     await load();
   }
 
+  async function updateAgentDetails(id: string, updates: { phoneNumber?: string; name?: string; region?: string }) {
+    await requestJson(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+    await load();
+  }
+
+  async function exportExcel() {
+    const blob = await requestBlob('/agents/export/excel');
+    downloadBlob(blob, `soledd_field_agents_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   return (
     <div>
       {/* Hero */}
@@ -129,12 +140,20 @@ export default function AgentsView() {
           <MiniStat value={String(allRegions.length)} label="Regions covered" />
           <MiniStat value={`$${stats.totalRemuneration.toFixed(2)}`} label="Remuneration paid" />
         </div>
-        <button
-          onClick={() => setShowAdd(o => !o)}
-          className="sm:ml-auto bg-accent hover:bg-accent-deep text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
-        >
-          {showAdd ? 'Cancel' : '+ Add Agent'}
-        </button>
+        <div className="sm:ml-auto flex gap-2">
+          <button
+            onClick={exportExcel}
+            className="border border-rule hover:border-ink text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+          >
+            Export to Excel
+          </button>
+          <button
+            onClick={() => setShowAdd(o => !o)}
+            className="bg-accent hover:bg-accent-deep text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+          >
+            {showAdd ? 'Cancel' : '+ Add Agent'}
+          </button>
+        </div>
       </div>
 
       {showAdd && (
@@ -221,11 +240,8 @@ export default function AgentsView() {
             return (
               <button
                 key={a.id}
-                onClick={() => a.verified && setSelected(a)}
-                disabled={!a.verified}
-                className={`text-left border border-rule rounded-2xl p-5 bg-card-tint flex flex-col gap-3.5 transition-all duration-150 ${
-                  a.verified ? 'hover:border-ink hover:-translate-y-0.5 hover:shadow-sm' : 'opacity-70 cursor-default'
-                }`}
+                onClick={() => setSelected(a)}
+                className="text-left border border-rule rounded-2xl p-5 bg-card-tint flex flex-col gap-3.5 transition-all duration-150 hover:border-ink hover:-translate-y-0.5 hover:shadow-sm"
               >
                 <div className="flex justify-between items-start gap-2">
                   <div>
@@ -266,7 +282,7 @@ export default function AgentsView() {
                 {filtered.map(a => {
                   const status = statusOf(a);
                   return (
-                    <tr key={a.id} onClick={() => a.verified && setSelected(a)} className={`border-b border-rule last:border-0 ${a.verified ? 'cursor-pointer hover:bg-paper' : ''}`}>
+                    <tr key={a.id} onClick={() => setSelected(a)} className="border-b border-rule last:border-0 cursor-pointer hover:bg-paper">
                       <td className="px-5 py-3.5 font-semibold">{a.name || '-'}</td>
                       <td className="px-5 py-3.5 font-mono-brand text-text-dim">{a.phone_number}</td>
                       <td className="px-5 py-3.5">{a.region || '-'}</td>
@@ -301,8 +317,12 @@ export default function AgentsView() {
           onClose={() => setSelected(null)}
           onToggleActive={() => toggleActive(selected)}
           onDelete={() => remove(selected.id)}
+          onResendOtp={() => resendOtp(selected.id)}
+          onSaveDetails={updates => updateAgentDetails(selected.id, updates)}
         />
       )}
+
+      <AgentApplicationsSection />
     </div>
   );
 }
@@ -412,19 +432,40 @@ function AgentsSkeleton({ mode }: { mode: ViewMode }) {
   );
 }
 
-function AgentDetail({ agent, onClose, onToggleActive, onDelete }: {
+function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, onSaveDetails }: {
   agent: Agent;
   onClose: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
+  onResendOtp: () => void;
+  onSaveDetails: (updates: { phoneNumber?: string; name?: string; region?: string }) => Promise<void>;
 }) {
   const [loans, setLoans] = useState<Application[] | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(agent.name || '');
+  const [phoneDraft, setPhoneDraft] = useState(agent.phone_number);
+  const [regionDraft, setRegionDraft] = useState(agent.region || '');
+  const [saving, setSaving] = useState(false);
   const status = statusOf(agent);
 
   useEffect(() => {
     setLoans(null);
     requestJson(`/applications?agent_phone=${encodeURIComponent(agent.phone_number)}`).then(r => setLoans(r.applications));
-  }, [agent.phone_number]);
+    setNameDraft(agent.name || '');
+    setPhoneDraft(agent.phone_number);
+    setRegionDraft(agent.region || '');
+  }, [agent.id, agent.phone_number]);
+
+  async function saveDetails(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onSaveDetails({ phoneNumber: phoneDraft, name: nameDraft, region: regionDraft });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-overlayIn" onClick={onClose}>
@@ -445,7 +486,30 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete }: {
             {status === 'PENDING' ? 'Pending OTP' : status === 'ACTIVE' ? 'Active' : 'Deactivated'}
           </span>
           {agent.region && <span className="text-xs text-text-dim">{agent.region}</span>}
+          <button onClick={() => setEditing(o => !o)} className="ml-auto text-xs font-semibold text-accent-bright hover:underline">
+            {editing ? 'Cancel' : 'Edit'}
+          </button>
         </div>
+
+        {editing && (
+          <form onSubmit={saveDetails} className="border border-rule rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end bg-paper">
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">Phone (WhatsApp)</label>
+              <input required value={phoneDraft} onChange={e => setPhoneDraft(e.target.value)} className="border border-rule rounded-lg px-3 py-2 text-sm w-full bg-card" />
+            </div>
+            <div className="flex-1 min-w-[140px]">
+              <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">Name</label>
+              <input value={nameDraft} onChange={e => setNameDraft(e.target.value)} className="border border-rule rounded-lg px-3 py-2 text-sm w-full bg-card" />
+            </div>
+            <div className="flex-1 min-w-[140px]">
+              <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">Region</label>
+              <input value={regionDraft} onChange={e => setRegionDraft(e.target.value)} className="border border-rule rounded-lg px-3 py-2 text-sm w-full bg-card" />
+            </div>
+            <button type="submit" disabled={saving} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60 transition-colors">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </form>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <MiniCard label="Total Loans" value={String(agent.performance.total)} />
@@ -455,12 +519,19 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete }: {
         </div>
 
         <div className="flex gap-2 mb-6 flex-wrap">
-          <button
-            onClick={onToggleActive}
-            className={`text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity ${agent.active ? 'bg-accent-deep' : 'bg-sage'}`}
-          >
-            {agent.active ? 'Deactivate Agent' : 'Activate Agent'}
-          </button>
+          {!agent.verified && (
+            <button onClick={onResendOtp} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+              Resend Code
+            </button>
+          )}
+          {agent.verified && (
+            <button
+              onClick={onToggleActive}
+              className={`text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity ${agent.active ? 'bg-accent-deep' : 'bg-sage'}`}
+            >
+              {agent.active ? 'Deactivate Agent' : 'Activate Agent'}
+            </button>
+          )}
           <button onClick={onDelete} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-accent hover:text-accent transition-colors">
             Delete Agent
           </button>
@@ -498,6 +569,241 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete }: {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+const AGENT_APP_REJECT_REASONS = [
+  'Area already covered',
+  'Could not verify identity',
+  'Incomplete information',
+  'Not currently recruiting',
+];
+
+function CheckIcon() {
+  return <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9"/></svg>;
+}
+function XIcon() {
+  return <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 5l10 10M15 5 5 15"/></svg>;
+}
+
+function AgentApplicationsSection() {
+  const [applications, setApplications] = useState<AgentApplication[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<AgentApplication | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ app: AgentApplication; mode: 'approve' | 'reject' } | null>(null);
+
+  async function load() {
+    const r = await requestJson('/agent-applications?status=PENDING_REVIEW');
+    setApplications(r.applications);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function decide(id: string, status: 'APPROVED' | 'REJECTED', note?: string) {
+    await requestJson(`/agent-applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note }) });
+    setPendingAction(null);
+    setSelected(null);
+    await load();
+  }
+
+  if (!loading && applications.length === 0) return null;
+
+  return (
+    <div className="mt-10">
+      <h2 className="font-display font-bold text-lg mb-5">Agent Applications <span className="text-text-dim font-normal text-sm">("Become an Agent" via WhatsApp)</span></h2>
+
+      {loading && (
+        <div className="border border-rule rounded-2xl overflow-hidden">
+          <div className="h-14 flex items-center px-5"><div className="h-3.5 w-40 rounded skeleton animate-shimmer" /></div>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="border border-rule rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="text-left text-[10.5px] uppercase tracking-wide text-text-dim border-b border-rule">
+                  <th className="px-5 py-3">Name</th><th className="px-5 py-3">Phone</th><th className="px-5 py-3">National ID</th>
+                  <th className="px-5 py-3">Area</th><th className="px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {applications.map(a => (
+                  <tr key={a.id} onClick={() => setSelected(a)} className="border-b border-rule last:border-0 cursor-pointer hover:bg-paper">
+                    <td className="px-5 py-3.5 font-semibold">{a.full_name}</td>
+                    <td className="px-5 py-3.5 font-mono-brand text-text-dim">{a.applicant_phone}</td>
+                    <td className="px-5 py-3.5">{a.national_id}</td>
+                    <td className="px-5 py-3.5">{a.area}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setPendingAction({ app: a, mode: 'approve' })} title="Approve" className="w-7 h-7 rounded-full border border-rule flex items-center justify-center text-text-dim hover:border-sage hover:text-sage transition-colors">
+                          <CheckIcon />
+                        </button>
+                        <button onClick={() => setPendingAction({ app: a, mode: 'reject' })} title="Reject" className="w-7 h-7 rounded-full border border-rule flex items-center justify-center text-text-dim hover:border-accent hover:text-accent transition-colors">
+                          <XIcon />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {selected && (
+        <AgentApplicationDetail
+          application={selected}
+          onClose={() => setSelected(null)}
+          onRequestDecision={mode => setPendingAction({ app: selected, mode })}
+        />
+      )}
+
+      {pendingAction && (
+        <AgentApplicationConfirmModal
+          application={pendingAction.app}
+          mode={pendingAction.mode}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={note => decide(pendingAction.app.id, pendingAction.mode === 'approve' ? 'APPROVED' : 'REJECTED', note)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentApplicationDetail({ application, onClose, onRequestDecision }: {
+  application: AgentApplication;
+  onClose: () => void;
+  onRequestDecision: (mode: 'approve' | 'reject') => void;
+}) {
+  const [documents, setDocuments] = useState<DocType[]>([]);
+  const [docsLoading, setDocsLoading] = useState(true);
+
+  useEffect(() => {
+    setDocsLoading(true);
+    requestJson(`/agent-applications/${application.id}/documents`)
+      .then(r => setDocuments(r.documents))
+      .finally(() => setDocsLoading(false));
+  }, [application.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-overlayIn" onClick={onClose}>
+      <div
+        className="fixed top-0 right-0 h-full w-full sm:w-1/2 bg-card overflow-y-auto p-6 sm:p-8 shadow-2xl animate-panelIn"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <div className="font-mono-brand text-xs text-text-dim">{application.applicant_phone}</div>
+            <h2 className="font-display text-xl font-bold">{application.full_name}</h2>
+          </div>
+          <button onClick={onClose} className="text-text-dim hover:text-ink text-2xl leading-none transition-colors">×</button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 text-sm mb-6">
+          <DetailField label="National ID" value={application.national_id} />
+          <DetailField label="Area" value={application.area} />
+          <DetailField label="Applicant Phone" value={application.applicant_phone} />
+          <DetailField label="Submitted" value={new Date(application.created_at).toLocaleDateString('en-ZW', { timeZone: 'Africa/Harare' })} />
+        </div>
+
+        <DocsSection documents={documents} loading={docsLoading} />
+
+        <div className="flex gap-2">
+          <button onClick={() => onRequestDecision('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
+          <button onClick={() => onRequestDecision('reject')} className="bg-accent-deep text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Reject</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-text-dim uppercase tracking-wide">{label}</div>
+      <div className="font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function AgentApplicationConfirmModal({ application, mode, onCancel, onConfirm }: {
+  application: AgentApplication;
+  mode: 'approve' | 'reject';
+  onCancel: () => void;
+  onConfirm: (note?: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const isApprove = mode === 'approve';
+
+  async function confirm() {
+    setSubmitting(true);
+    await onConfirm(reason.trim() || undefined);
+    setSubmitting(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-6 animate-overlayIn" onClick={onCancel}>
+      <div className="bg-card rounded-2xl max-w-sm w-full p-6 animate-modalIn" onClick={e => e.stopPropagation()}>
+        <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-4 ${isApprove ? 'bg-sage-bg text-sage' : 'bg-accent-wash text-accent-deep'}`}>
+          {isApprove ? <div className="scale-150"><CheckIcon /></div> : <div className="scale-150"><XIcon /></div>}
+        </div>
+
+        <h3 className="font-display font-bold text-lg mb-1">
+          {isApprove ? 'Approve this agent application?' : 'Reject this agent application?'}
+        </h3>
+        <div className="text-sm text-text-dim mb-5">
+          {application.full_name} · {application.applicant_phone} · {application.area}
+        </div>
+
+        {isApprove && (
+          <div className="text-sm text-text-dim mb-5">This creates a verified, active field agent using the applicant's WhatsApp number, name, and area.</div>
+        )}
+
+        {!isApprove && (
+          <div className="mb-5">
+            <div className="text-xs uppercase tracking-wide text-text-dim font-semibold mb-2">Reason (sent to the applicant)</div>
+            <div className="flex flex-wrap gap-1.5 mb-2.5">
+              {AGENT_APP_REJECT_REASONS.map(r => (
+                <button
+                  key={r}
+                  onClick={() => setReason(r)}
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors ${
+                    reason === r ? 'bg-solid border-solid text-white' : 'border-rule text-text-dim hover:border-ink'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Or type a custom reason…"
+              rows={2}
+              className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-paper focus:outline-none focus:border-accent resize-none"
+            />
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 border border-rule text-sm font-semibold px-4 py-2.5 rounded-lg hover:border-ink transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={confirm}
+            disabled={submitting}
+            className={`flex-1 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-opacity hover:opacity-90 disabled:opacity-60 ${isApprove ? 'bg-sage' : 'bg-accent-deep'}`}
+          >
+            {submitting ? 'Working…' : isApprove ? 'Approve' : 'Reject'}
+          </button>
+        </div>
       </div>
     </div>
   );
