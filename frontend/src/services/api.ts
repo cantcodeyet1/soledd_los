@@ -1,7 +1,12 @@
 import { AuthUser } from '../types';
 
-const BASE = '/api/admin';
-const AUTH_BASE = '/api/auth';
+// In dev, Vite proxies /api to the local backend (see vite.config.ts), so a
+// relative path works. In production the frontend and backend are deployed
+// separately (e.g. Vercel + Render) — set VITE_API_BASE_URL to the backend's
+// full URL (no trailing slash) at build time to point requests there instead.
+const API_ROOT = import.meta.env.VITE_API_BASE_URL || '';
+const BASE = `${API_ROOT}/api/admin`;
+const AUTH_BASE = `${API_ROOT}/api/auth`;
 
 function getToken(): string {
   return localStorage.getItem('soledd_admin_token') || '';

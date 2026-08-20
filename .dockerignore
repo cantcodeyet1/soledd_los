@@ -1,0 +1,8 @@
+node_modules
+frontend
+naes
+design-concepts
+.git
+.env
+*.log
+scripts/__pycache__
