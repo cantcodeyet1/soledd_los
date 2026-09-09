@@ -45,7 +45,16 @@ function messageTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-ZW', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ConversationsView() {
+function openWhatsApp(phone: string) {
+  const clean = (phone || '').replace(/[^0-9]/g, '');
+  window.open(`https://wa.me/${clean}`, '_blank', 'noopener');
+}
+
+interface ConversationsViewProps {
+  onOpenApplication?: (id: string) => void;
+}
+
+export default function ConversationsView({ onOpenApplication }: ConversationsViewProps = {}) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('all');
@@ -84,17 +93,19 @@ export default function ConversationsView() {
 
   return (
     <div>
-      <div className="mb-8 sm:mb-10">
-        <div className="text-xs font-bold text-accent uppercase tracking-wide mb-2.5">Chats</div>
-        <h1 className="font-display font-bold text-3xl sm:text-4xl tracking-tight">Client Conversations</h1>
-        <div className="text-sm text-text-dim mt-2">
-          {statusCounts.AWAITING_DOCS || 0} awaiting documents · {statusCounts.ABANDONED || 0} abandoned · {conversations.length} total
+      <div className="mb-5 sm:mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-xs font-bold text-accent uppercase tracking-wide mb-2.5">Chats</div>
+          <h1 className="font-display font-bold text-3xl sm:text-4xl tracking-tight">Client Conversations</h1>
+          <div className="text-sm text-text-dim mt-2">
+            {statusCounts.AWAITING_DOCS || 0} awaiting documents · {statusCounts.ABANDONED || 0} abandoned · {conversations.length} total
+          </div>
         </div>
       </div>
 
-      <div className="border border-rule rounded-2xl overflow-hidden bg-paper" style={{ height: 'calc(100vh - 280px)', minHeight: 520 }}>
+      <div className="border border-rule rounded-2xl overflow-hidden bg-paper" style={{ height: 'calc(100vh - 210px)', minHeight: 640 }}>
         <div className="flex h-full">
-          <div className="w-full sm:w-[340px] shrink-0 border-r border-rule flex flex-col h-full">
+          <div className="w-full sm:w-[320px] shrink-0 border-r border-rule flex flex-col h-full">
             <div className="p-3 border-b border-rule">
               <input
                 placeholder="Search name or phone…"
@@ -117,7 +128,7 @@ export default function ConversationsView() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto no-scrollbar">
               {loading && (
                 <div className="p-3 flex flex-col gap-2">
                   {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-14 rounded-lg skeleton animate-shimmer" />)}
@@ -161,21 +172,26 @@ export default function ConversationsView() {
               <ChatThread
                 key={selected.phone}
                 conversation={selected}
+                showingProfile={showProfile}
                 onOpenProfile={() => setShowProfile(true)}
               />
             )}
           </div>
+
+          {showProfile && selected && (
+            <ProfileSidePanel
+              conversation={selected}
+              onClose={() => setShowProfile(false)}
+              onOpenApplication={onOpenApplication}
+            />
+          )}
         </div>
       </div>
-
-      {showProfile && selected && (
-        <ProfileSidePanel conversation={selected} onClose={() => setShowProfile(false)} />
-      )}
     </div>
   );
 }
 
-function ChatThread({ conversation, onOpenProfile }: { conversation: Conversation; onOpenProfile: () => void }) {
+function ChatThread({ conversation, onOpenProfile, showingProfile }: { conversation: Conversation; onOpenProfile: () => void; showingProfile: boolean }) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -198,7 +214,10 @@ function ChatThread({ conversation, onOpenProfile }: { conversation: Conversatio
 
   return (
     <>
-      <button onClick={onOpenProfile} className="flex items-center gap-2.5 px-4 py-3 border-b border-rule text-left hover:bg-card-tint transition-colors shrink-0">
+      <button
+        onClick={onOpenProfile}
+        className={`flex items-center gap-2.5 px-4 py-3 border-b border-rule text-left hover:bg-card-tint transition-colors shrink-0 ${showingProfile ? 'bg-card-tint' : ''}`}
+      >
         <div className="w-8 h-8 rounded-full bg-info-bg text-info flex items-center justify-center text-xs font-bold shrink-0">
           {initialsFrom(conversation.name, conversation.phone)}
         </div>
@@ -208,7 +227,7 @@ function ChatThread({ conversation, onOpenProfile }: { conversation: Conversatio
         </div>
       </button>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+      <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 flex flex-col gap-2">
         {messages === null && (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 4 }).map((_, i) => <div key={i} className={`h-10 rounded-2xl skeleton animate-shimmer ${i % 2 ? 'w-2/3 self-end' : 'w-1/2'}`} />)}
@@ -227,70 +246,85 @@ function ChatThread({ conversation, onOpenProfile }: { conversation: Conversatio
   );
 }
 
-function ProfileSidePanel({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
+function ProfileSidePanel({
+  conversation, onClose, onOpenApplication,
+}: {
+  conversation: Conversation;
+  onClose: () => void;
+  onOpenApplication?: (id: string) => void;
+}) {
   const [customer, setCustomer] = useState<CustomerRecord | null>(null);
   const [applications, setApplications] = useState<Application[] | null>(null);
 
   useEffect(() => {
+    setCustomer(null);
+    setApplications(null);
     requestJson(`/conversations/${encodeURIComponent(conversation.phone)}/messages`).then(r => setCustomer(r.customer));
     requestJson(`/applications?applicant_phone=${encodeURIComponent(conversation.phone)}`).then(r => setApplications(r.applications));
   }, [conversation.phone]);
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-overlayIn" onClick={onClose}>
-      <div
-        className="fixed top-0 right-0 h-full w-full sm:w-96 bg-card overflow-y-auto p-6 shadow-2xl animate-panelIn"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-start mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-info-bg text-info flex items-center justify-center text-sm font-bold shrink-0">
-              {initialsFrom(conversation.name, conversation.phone)}
-            </div>
-            <div>
-              <div className="font-display font-bold text-base">{conversation.name || 'Unnamed'}</div>
-              <div className="text-xs text-text-dim font-mono-brand">{conversation.phone}</div>
-            </div>
+    <div className="hidden sm:flex flex-col w-[340px] shrink-0 border-l border-rule h-full overflow-y-auto no-scrollbar p-6 animate-panelIn">
+      <div className="flex justify-between items-start mb-6">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-full bg-info-bg text-info flex items-center justify-center text-sm font-bold shrink-0">
+            {initialsFrom(conversation.name, conversation.phone)}
           </div>
-          <button onClick={onClose} className="text-text-dim hover:text-ink text-2xl leading-none transition-colors">×</button>
+          <div className="min-w-0">
+            <div className="font-display font-bold text-base truncate">{conversation.name || 'Unnamed'}</div>
+            <div className="text-xs text-text-dim font-mono-brand truncate">{conversation.phone}</div>
+          </div>
         </div>
+        <button onClick={onClose} className="text-text-dim hover:text-ink text-2xl leading-none transition-colors shrink-0">×</button>
+      </div>
 
-        <div className="flex items-center gap-2 mb-6">
-          <span className={`text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${STATUS_META[conversation.status].pill}`}>
-            {STATUS_META[conversation.status].label}
-          </span>
-          {conversation.botPaused && <span className="text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full bg-slate-bg text-slate">Bot Paused</span>}
-        </div>
+      <button
+        onClick={() => openWhatsApp(conversation.phone)}
+        className="flex items-center justify-center gap-2 w-full mb-6 py-2.5 rounded-full bg-sage text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.9-2-1-.3-.1-.5-.1-.6.1-.2.3-.7 1-.9 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.5-1.6-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.3-.4.1-.2 0-.4 0-.5C10 9 9.5 7.7 9.2 7.2c-.2-.5-.5-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2.1 3.2 5 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.6.2-1.2.2-1.3-.1-.2-.3-.2-.6-.4z"/><path d="M12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.5 1.3 5L2 22l5.2-1.4c1.5.8 3.1 1.2 4.8 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2zm0 18.2c-1.6 0-3.1-.4-4.5-1.3l-.3-.2-3.1.8.8-3-.2-.3C4 14.7 3.6 13.4 3.6 12c0-4.6 3.8-8.4 8.4-8.4s8.4 3.8 8.4 8.4-3.8 8.2-8.4 8.2z"/></svg>
+        Chat Now
+      </button>
 
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <SidebarField label="Customer Since" value={customer ? new Date(customer.created_at).toLocaleDateString('en-ZW', { day: 'numeric', month: 'short', year: 'numeric' }) : '…'} />
-          <SidebarField label="Last Active" value={relativeTime(conversation.lastMessageAt) || '—'} />
-          <SidebarField label="Current Flow" value={conversation.flow || 'None'} />
-          <SidebarField label="Current Step" value={conversation.step || '—'} />
-        </div>
+      <div className="flex items-center gap-2 mb-6 flex-wrap">
+        <span className={`text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${STATUS_META[conversation.status].pill}`}>
+          {STATUS_META[conversation.status].label}
+        </span>
+        {conversation.botPaused && <span className="text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full bg-slate-bg text-slate">Bot Paused</span>}
+      </div>
 
-        <div className="border-t border-rule pt-4">
-          <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Applications</div>
-          {applications === null && (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-14 rounded-lg skeleton animate-shimmer" />)}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <SidebarField label="Customer Since" value={customer ? new Date(customer.created_at).toLocaleDateString('en-ZW', { day: 'numeric', month: 'short', year: 'numeric' }) : '…'} />
+        <SidebarField label="Last Active" value={relativeTime(conversation.lastMessageAt) || '—'} />
+        <SidebarField label="Current Flow" value={conversation.flow || 'None'} />
+        <SidebarField label="Current Step" value={conversation.step || '—'} />
+      </div>
+
+      <div className="border-t border-rule pt-4">
+        <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Applications</div>
+        {applications === null && (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-14 rounded-lg skeleton animate-shimmer" />)}
+          </div>
+        )}
+        {applications !== null && applications.length === 0 && <div className="text-sm text-text-dim">No applications from this number yet.</div>}
+        {applications !== null && applications.map(a => (
+          <button
+            key={a.id}
+            onClick={() => onOpenApplication?.(a.id)}
+            className="w-full text-left border border-rule rounded-xl p-3 mb-2 hover:border-ink hover:bg-card-tint transition-colors"
+          >
+            <div className="flex justify-between items-start gap-2 mb-1.5">
+              <span className="font-semibold text-sm">{a.full_name}</span>
+              <span className="font-mono-brand text-[10.5px] text-text-dim shrink-0">{a.reference_number}</span>
             </div>
-          )}
-          {applications !== null && applications.length === 0 && <div className="text-sm text-text-dim">No applications from this number yet.</div>}
-          {applications !== null && applications.map(a => (
-            <div key={a.id} className="border border-rule rounded-xl p-3 mb-2">
-              <div className="flex justify-between items-start gap-2 mb-1.5">
-                <span className="font-semibold text-sm">{a.full_name}</span>
-                <span className="font-mono-brand text-[10.5px] text-text-dim shrink-0">{a.reference_number}</span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-info-bg text-info">{CATEGORY_LABELS[a.category]}</span>
-                <span className="text-[10.5px] font-bold uppercase px-2 py-0.5 rounded-full bg-card-tint text-text-dim">{a.status.replace('_', ' ')}</span>
-                <span className="font-mono-brand text-xs font-semibold ml-auto">${Number(a.loan_amount).toFixed(2)}</span>
-              </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-info-bg text-info">{CATEGORY_LABELS[a.category]}</span>
+              <span className="text-[10.5px] font-bold uppercase px-2 py-0.5 rounded-full bg-card-tint text-text-dim">{a.status.replace('_', ' ')}</span>
+              <span className="font-mono-brand text-xs font-semibold ml-auto">${Number(a.loan_amount).toFixed(2)}</span>
             </div>
-          ))}
-        </div>
+          </button>
+        ))}
       </div>
     </div>
   );

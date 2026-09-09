@@ -15,9 +15,9 @@ type View = 'queue' | 'chats' | 'calculator' | 'agents' | 'profile';
 
 const NAV: { id: View; label: string }[] = [
   { id: 'queue', label: 'Loans' },
-  { id: 'chats', label: 'Chats' },
   { id: 'calculator', label: 'Calculators' },
   { id: 'agents', label: 'Field Agents' },
+  { id: 'chats', label: 'Chats' },
 ];
 
 function initialsFrom(name: string) {
@@ -32,6 +32,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('soledd_display_name') || getStoredUser()?.name || 'Tendai Marufu');
   const [showTour, setShowTour] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
+  const [jumpApplicationId, setJumpApplicationId] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -59,6 +60,11 @@ export default function App() {
   function signOut() {
     clearSession();
     setUser(null);
+  }
+
+  function openApplication(id: string) {
+    setJumpApplicationId(id);
+    go('queue');
   }
 
   return (
@@ -133,8 +139,13 @@ export default function App() {
       </nav>
 
       <main className="max-w-[1440px] mx-auto px-5 sm:px-8 lg:px-10 py-8 sm:py-12 pb-20">
-        {view === 'queue' && <ApplicationsView />}
-        {view === 'chats' && <ConversationsView />}
+        {view === 'queue' && (
+          <ApplicationsView
+            initialApplicationId={jumpApplicationId}
+            onConsumedInitialApplication={() => setJumpApplicationId(null)}
+          />
+        )}
+        {view === 'chats' && <ConversationsView onOpenApplication={openApplication} />}
         {view === 'calculator' && <CalculatorView />}
         {view === 'agents' && <AgentsView />}
         {view === 'profile' && (

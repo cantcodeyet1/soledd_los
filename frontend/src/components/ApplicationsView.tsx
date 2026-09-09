@@ -44,7 +44,12 @@ function openWhatsApp(phone: string, message: string) {
   window.open(`https://wa.me/${clean}${text}`, '_blank', 'noopener');
 }
 
-export default function ApplicationsView() {
+interface ApplicationsViewProps {
+  initialApplicationId?: string | null;
+  onConsumedInitialApplication?: () => void;
+}
+
+export default function ApplicationsView({ initialApplicationId, onConsumedInitialApplication }: ApplicationsViewProps = {}) {
   const [allApps, setAllApps] = useState<Application[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
@@ -80,6 +85,16 @@ export default function ApplicationsView() {
     const interval = setInterval(load, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  // Jumped here from another view (e.g. Chats → Applications) with a specific
+  // application to open. Fires once the list has loaded, then clears itself.
+  useEffect(() => {
+    if (!initialApplicationId || allApps.length === 0) return;
+    const match = allApps.find(a => a.id === initialApplicationId);
+    if (match) setSelected(match);
+    onConsumedInitialApplication?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialApplicationId, allApps]);
 
   const apps = useMemo(() => {
     const q = search.trim().toLowerCase();

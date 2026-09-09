@@ -90,6 +90,14 @@ body {
   transform: scaleX(1);
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .skeleton {
   background: linear-gradient(90deg, var(--c-rule) 25%, var(--c-card-tint) 37%, var(--c-rule) 63%);
   background-size: 800px 100%;
