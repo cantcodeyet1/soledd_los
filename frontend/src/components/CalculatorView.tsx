@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { requestJson } from '../services/api';
-import { CalculatorResult as CalculatorResultType, LoanProduct, BorrowerType, LOAN_PRODUCT_LABELS } from '../types';
+import { CalculatorResult as CalculatorResultType, LoanProduct, BorrowerType, RepaymentType, LOAN_PRODUCT_LABELS } from '../types';
 import CalculatorResult, { AmortisationTable, CalculatorResultSkeleton } from './CalculatorResult';
 import Dropdown from './Dropdown';
 
 const BORROWER_TYPES: { key: BorrowerType; label: string }[] = [
   { key: 'SALARIED', label: 'Salaried' },
   { key: 'NON_SALARIED', label: 'Non-Salaried' },
+];
+
+const REPAYMENT_TYPES: { key: RepaymentType; label: string }[] = [
+  { key: 'EQUAL_INSTALMENTS', label: 'Equal Instalments' },
+  { key: 'INTEREST_ONLY_PRINCIPAL_AT_END', label: 'Interest Only + Principal at End' },
 ];
 
 function todayIso() {
@@ -18,10 +23,19 @@ export default function CalculatorView() {
   const [borrowerType, setBorrowerType] = useState<BorrowerType>('SALARIED');
   const [amount, setAmount] = useState(1000);
   const [disbursementDate, setDisbursementDate] = useState(todayIso());
+  const [repaymentStartDate, setRepaymentStartDate] = useState('');
   const [tenor, setTenor] = useState(6);
   const [result, setResult] = useState<CalculatorResultType | null>(null);
   const [computing, setComputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [negotiatedRatePct, setNegotiatedRatePct] = useState(10);
+  const [negotiatedImmtPct, setNegotiatedImmtPct] = useState(0);
+  const [negotiatedBankPct, setNegotiatedBankPct] = useState(0);
+  const [negotiatedEstablishmentPct, setNegotiatedEstablishmentPct] = useState(5);
+  const [repaymentType, setRepaymentType] = useState<RepaymentType>('EQUAL_INSTALMENTS');
+
+  const isNegotiated = product === 'SME_NEGOTIATED';
 
   async function compute() {
     setComputing(true);
@@ -29,7 +43,16 @@ export default function CalculatorView() {
     try {
       const r = await requestJson('/calculator/compute', {
         method: 'POST',
-        body: JSON.stringify({ product, borrowerType, amountRequired: amount, disbursementDate, tenorMonths: tenor }),
+        body: JSON.stringify({
+          product, borrowerType, amountRequired: amount, disbursementDate,
+          repaymentStartDate: repaymentStartDate || undefined,
+          tenorMonths: tenor,
+          negotiatedRates: isNegotiated ? {
+            monthlyRatePct: negotiatedRatePct, immtPct: negotiatedImmtPct,
+            bankChargePct: negotiatedBankPct, establishmentFeePct: negotiatedEstablishmentPct,
+          } : undefined,
+          repaymentType: isNegotiated ? repaymentType : undefined,
+        }),
       });
       setResult(r);
     } catch (e: any) {
@@ -84,6 +107,48 @@ export default function CalculatorView() {
               <input type="number" value={tenor} min={1} max={36} onChange={e => setTenor(Number(e.target.value))} className="w-full border border-rule rounded-lg px-3 py-2.5 text-sm bg-card" />
             </FieldRow>
           </div>
+
+          <FieldRow label="Repayment Start Date (optional)">
+            <input
+              type="date" value={repaymentStartDate} onChange={e => setRepaymentStartDate(e.target.value)}
+              placeholder="Auto from disbursement date"
+              className="w-full border border-rule rounded-lg px-3 py-2.5 text-sm bg-card"
+            />
+          </FieldRow>
+
+          {isNegotiated && (
+            <div className="border border-rule rounded-xl p-4 mb-4 bg-card">
+              <div className="text-[11px] uppercase tracking-wide text-text-dim font-semibold mb-3">Negotiated terms</div>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <FieldRow label="Monthly Rate (%)">
+                  <input type="number" step={0.1} value={negotiatedRatePct} onChange={e => setNegotiatedRatePct(Number(e.target.value))} className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-paper" />
+                </FieldRow>
+                <FieldRow label="Establishment Fee (%)">
+                  <input type="number" step={0.1} value={negotiatedEstablishmentPct} onChange={e => setNegotiatedEstablishmentPct(Number(e.target.value))} className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-paper" />
+                </FieldRow>
+                <FieldRow label="IMMT (%)">
+                  <input type="number" step={0.1} value={negotiatedImmtPct} onChange={e => setNegotiatedImmtPct(Number(e.target.value))} className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-paper" />
+                </FieldRow>
+                <FieldRow label="Bank Charge (%)">
+                  <input type="number" step={0.1} value={negotiatedBankPct} onChange={e => setNegotiatedBankPct(Number(e.target.value))} className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-paper" />
+                </FieldRow>
+              </div>
+              <FieldRow label="Repayment Type">
+                <div className="grid grid-cols-1 gap-2">
+                  {REPAYMENT_TYPES.map(rt => (
+                    <button
+                      key={rt.key}
+                      type="button"
+                      onClick={() => setRepaymentType(rt.key)}
+                      className={`text-sm font-semibold px-3 py-2 rounded-lg border transition-colors text-left ${repaymentType === rt.key ? 'bg-solid text-white border-solid' : 'border-rule text-ink hover:border-ink'}`}
+                    >
+                      {rt.label}
+                    </button>
+                  ))}
+                </div>
+              </FieldRow>
+            </div>
+          )}
 
           <button onClick={compute} disabled={computing} className="bg-accent hover:bg-accent-deep text-white text-sm font-semibold px-5 py-2.5 rounded-lg mt-2 w-full sm:w-auto disabled:opacity-60">
             {computing ? 'Calculating…' : 'Calculate Instalment'}

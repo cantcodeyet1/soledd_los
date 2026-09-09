@@ -94,9 +94,10 @@ export interface AuthUser {
   mustResetPassword: boolean;
 }
 
-export type LoanProduct = 'STANDARD_USD' | 'SSB' | 'PENSIONS' | 'ZIG_LOAN_20' | 'FARM_SHOP';
+export type LoanProduct = 'STANDARD_USD' | 'SSB' | 'PENSIONS' | 'ZIG_LOAN_20' | 'FARM_SHOP' | 'SME_STANDARD' | 'SME_NEGOTIATED';
 export type BorrowerType = 'SALARIED' | 'NON_SALARIED';
-export type InterestMethod = 'ACTUAL_DAY' | 'STRAIGHT_LINE_30';
+export type InterestMethod = 'ANNUITY' | 'STRAIGHT_LINE_30';
+export type RepaymentType = 'EQUAL_INSTALMENTS' | 'INTEREST_ONLY_PRINCIPAL_AT_END';
 
 export const LOAN_PRODUCT_LABELS: Record<LoanProduct, string> = {
   STANDARD_USD: 'Standard USD',
@@ -104,6 +105,8 @@ export const LOAN_PRODUCT_LABELS: Record<LoanProduct, string> = {
   PENSIONS: 'Pensions',
   ZIG_LOAN_20: 'ZiG Loan 20%',
   FARM_SHOP: 'Farm Shop',
+  SME_STANDARD: 'SME Standard',
+  SME_NEGOTIATED: 'SME Negotiated',
 };
 
 export interface ProductConfig {
@@ -111,6 +114,15 @@ export interface ProductConfig {
   monthlyRatePct: number;
   collectionFeeApplies: boolean;
   interestMethod: InterestMethod;
+  negotiable?: boolean;
+}
+
+/** SME Negotiated only — per-quote rate overrides, since its terms aren't fixed per-product. */
+export interface NegotiatedRates {
+  monthlyRatePct: number;
+  immtPct: number;
+  bankChargePct: number;
+  establishmentFeePct: number;
 }
 
 export interface UpfrontConfig {
@@ -131,7 +143,6 @@ export interface CalculatorConfig {
 export interface ScheduleRow {
   no: number;
   date: string;
-  days: number;
   opening: number;
   interest: number;
   instalmentExclCollectionFee: number;
@@ -147,6 +158,7 @@ export interface CalculatorResult {
   borrowerType: BorrowerType;
   monthlyRatePct: number;
   interestMethod: InterestMethod;
+  repaymentType: RepaymentType;
   amountRequired: number;
   disbursementDate: string;
   tenorMonths: number;

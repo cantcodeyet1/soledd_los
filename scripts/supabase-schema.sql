@@ -169,11 +169,13 @@ create index if not exists idx_applications_agent_phone on applications(agent_ph
 insert into settings (key, value) values
   ('loan_calculator_config', '{
     "products": {
-      "STANDARD_USD": { "label": "Standard USD", "monthlyRatePct": 10, "collectionFeeApplies": false, "interestMethod": "ACTUAL_DAY" },
-      "SSB":           { "label": "SSB", "monthlyRatePct": 10, "collectionFeeApplies": true, "interestMethod": "ACTUAL_DAY" },
-      "PENSIONS":      { "label": "Pensions", "monthlyRatePct": 10, "collectionFeeApplies": true, "interestMethod": "ACTUAL_DAY" },
-      "ZIG_LOAN_20":   { "label": "ZiG Loan 20%", "monthlyRatePct": 20, "collectionFeeApplies": true, "interestMethod": "ACTUAL_DAY" },
-      "FARM_SHOP":     { "label": "Farm Shop", "monthlyRatePct": 5, "collectionFeeApplies": true, "interestMethod": "STRAIGHT_LINE_30" }
+      "STANDARD_USD":   { "label": "Standard USD", "monthlyRatePct": 8, "collectionFeeApplies": false, "interestMethod": "ANNUITY", "dateRule": "BORROWER_TYPE" },
+      "SSB":            { "label": "SSB", "monthlyRatePct": 8, "collectionFeeApplies": true, "interestMethod": "ANNUITY", "dateRule": "BORROWER_TYPE" },
+      "PENSIONS":       { "label": "Pensions", "monthlyRatePct": 8, "collectionFeeApplies": true, "interestMethod": "ANNUITY", "dateRule": "BORROWER_TYPE" },
+      "ZIG_LOAN_20":    { "label": "ZiG Loan 20%", "monthlyRatePct": 20, "collectionFeeApplies": true, "interestMethod": "ANNUITY", "dateRule": "BORROWER_TYPE" },
+      "FARM_SHOP":      { "label": "Farm Shop", "monthlyRatePct": 5, "collectionFeeApplies": true, "interestMethod": "STRAIGHT_LINE_30", "dateRule": "FIXED_30_DAYS" },
+      "SME_STANDARD":   { "label": "SME Standard", "monthlyRatePct": 10, "collectionFeeApplies": false, "interestMethod": "ANNUITY", "dateRule": "ALWAYS_EDATE", "upfrontOverride": { "immtPct": 0, "bankChargePct": 0, "loanProtectionFeePct": 0 } },
+      "SME_NEGOTIATED": { "label": "SME Negotiated", "monthlyRatePct": 10, "collectionFeeApplies": false, "interestMethod": "ANNUITY", "dateRule": "ALWAYS_EDATE", "negotiable": true, "upfrontOverride": { "immtPct": 0, "bankChargePct": 0, "loanProtectionFeePct": 0 } }
     },
     "upfront": {
       "immtPct": 2,
@@ -182,10 +184,10 @@ insert into settings (key, value) values
       "zigBankChargeMin": 100,
       "establishmentFeePct": 5,
       "loanProtectionFeePct": 2.5,
-      "collectionFeePct": 10.5
+      "collectionFeePct": 5
     }
   }'::jsonb)
-on conflict (key) do nothing;
+on conflict (key) do update set value = excluded.value, updated_at = now();
 
 delete from settings where key = 'calculator_rates';
 

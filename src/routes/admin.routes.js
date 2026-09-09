@@ -263,7 +263,10 @@ router.put('/calculator/rates', requireAdmin, async (req, res) => {
 
 router.post('/calculator/compute', async (req, res) => {
   try {
-    const { product, borrowerType, amountRequired, disbursementDate, tenorMonths } = req.body;
+    const {
+      product, borrowerType, amountRequired, disbursementDate, repaymentStartDate, tenorMonths,
+      negotiatedRates, repaymentType,
+    } = req.body;
     if (!product || !borrowerType || !amountRequired || !disbursementDate || !tenorMonths) {
       return res.status(400).json({ error: 'product, borrowerType, amountRequired, disbursementDate, and tenorMonths are required' });
     }
@@ -272,8 +275,11 @@ router.post('/calculator/compute', async (req, res) => {
       product, borrowerType,
       amountRequired: Number(amountRequired),
       disbursementDate,
+      repaymentStartDate: repaymentStartDate || undefined,
       tenorMonths: Number(tenorMonths),
       config,
+      negotiatedRates,
+      repaymentType,
     });
     res.json(result);
   } catch (err) {

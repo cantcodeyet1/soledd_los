@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { requestJson, requestBlob, downloadBlob } from '../services/api';
 import {
   Application, Stats, CATEGORY_LABELS, CategoryCode, ApplicationStatus, Document, Agent,
-  LoanProduct, BorrowerType, LOAN_PRODUCT_LABELS, CalculatorResult as CalculatorResultType,
+  LoanProduct, BorrowerType, RepaymentType, LOAN_PRODUCT_LABELS, CalculatorResult as CalculatorResultType,
 } from '../types';
 import CalculatorResult, { AmortisationTable, CalculatorResultSkeleton } from './CalculatorResult';
 import Dropdown from './Dropdown';
@@ -710,7 +710,7 @@ function Field({ label, value }: { label: string; value: string }) {
 const DEFAULT_PRODUCT_FOR_CATEGORY: Record<CategoryCode, LoanProduct> = {
   SSB: 'SSB',
   GOVT_PENSIONER: 'PENSIONS',
-  SME: 'STANDARD_USD',
+  SME: 'SME_STANDARD',
   PRIVATE_SECTOR: 'STANDARD_USD',
 };
 
@@ -726,6 +726,11 @@ const BORROWER_TYPES: { key: BorrowerType; label: string }[] = [
   { key: 'NON_SALARIED', label: 'Non-Salaried' },
 ];
 
+const NEGOTIATED_REPAYMENT_TYPES: { key: RepaymentType; label: string }[] = [
+  { key: 'EQUAL_INSTALMENTS', label: 'Equal Instalments' },
+  { key: 'INTEREST_ONLY_PRINCIPAL_AT_END', label: 'Interest Only + Principal at End' },
+];
+
 function LoanRepaymentCalculator({ application, onTermsChange }: {
   application: Application;
   onTermsChange: (terms: Partial<Pick<Application, 'loan_product' | 'borrower_type' | 'disbursement_date'>>) => void;
@@ -733,18 +738,35 @@ function LoanRepaymentCalculator({ application, onTermsChange }: {
   const [product, setProduct] = useState<LoanProduct>(application.loan_product || DEFAULT_PRODUCT_FOR_CATEGORY[application.category]);
   const [borrowerType, setBorrowerType] = useState<BorrowerType>(application.borrower_type || DEFAULT_BORROWER_TYPE_FOR_CATEGORY[application.category]);
   const [disbursementDate, setDisbursementDate] = useState(application.disbursement_date || new Date().toISOString().slice(0, 10));
+  const [repaymentStartDate, setRepaymentStartDate] = useState('');
   const [tenor, setTenor] = useState(application.repayment_months);
   const [result, setResult] = useState<CalculatorResultType | null>(null);
   const [computing, setComputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function compute(p: LoanProduct, b: BorrowerType, d: string, t: number) {
+  // SME Negotiated only — not persisted to the application, re-entered per review.
+  const [negotiatedRatePct, setNegotiatedRatePct] = useState(10);
+  const [negotiatedImmtPct, setNegotiatedImmtPct] = useState(0);
+  const [negotiatedBankPct, setNegotiatedBankPct] = useState(0);
+  const [negotiatedEstablishmentPct, setNegotiatedEstablishmentPct] = useState(5);
+  const [repaymentType, setRepaymentType] = useState<RepaymentType>('EQUAL_INSTALMENTS');
+  const isNegotiated = product === 'SME_NEGOTIATED';
+
+  async function compute(p: LoanProduct, b: BorrowerType, d: string, rsd: string, t: number) {
     setComputing(true);
     setError(null);
     try {
       const r = await requestJson('/calculator/compute', {
         method: 'POST',
-        body: JSON.stringify({ product: p, borrowerType: b, amountRequired: application.loan_amount, disbursementDate: d, tenorMonths: t }),
+        body: JSON.stringify({
+          product: p, borrowerType: b, amountRequired: application.loan_amount,
+          disbursementDate: d, repaymentStartDate: rsd || undefined, tenorMonths: t,
+          negotiatedRates: p === 'SME_NEGOTIATED' ? {
+            monthlyRatePct: negotiatedRatePct, immtPct: negotiatedImmtPct,
+            bankChargePct: negotiatedBankPct, establishmentFeePct: negotiatedEstablishmentPct,
+          } : undefined,
+          repaymentType: p === 'SME_NEGOTIATED' ? repaymentType : undefined,
+        }),
       });
       setResult(r);
     } catch (e: any) {
@@ -755,28 +777,35 @@ function LoanRepaymentCalculator({ application, onTermsChange }: {
   }
 
   useEffect(() => {
-    compute(product, borrowerType, disbursementDate, tenor);
+    compute(product, borrowerType, disbursementDate, repaymentStartDate, tenor);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [application.id]);
 
   function changeProduct(p: LoanProduct) {
     setProduct(p);
     onTermsChange({ loan_product: p });
-    compute(p, borrowerType, disbursementDate, tenor);
+    compute(p, borrowerType, disbursementDate, repaymentStartDate, tenor);
   }
   function changeBorrowerType(b: BorrowerType) {
     setBorrowerType(b);
     onTermsChange({ borrower_type: b });
-    compute(product, b, disbursementDate, tenor);
+    compute(product, b, disbursementDate, repaymentStartDate, tenor);
   }
   function changeDate(d: string) {
     setDisbursementDate(d);
     onTermsChange({ disbursement_date: d });
-    compute(product, borrowerType, d, tenor);
+    compute(product, borrowerType, d, repaymentStartDate, tenor);
+  }
+  function changeRepaymentStartDate(rsd: string) {
+    setRepaymentStartDate(rsd);
+    compute(product, borrowerType, disbursementDate, rsd, tenor);
   }
   function changeTenor(t: number) {
     setTenor(t);
-    compute(product, borrowerType, disbursementDate, t);
+    compute(product, borrowerType, disbursementDate, repaymentStartDate, t);
+  }
+  function recomputeNegotiated() {
+    compute(product, borrowerType, disbursementDate, repaymentStartDate, tenor);
   }
 
   return (
@@ -784,7 +813,7 @@ function LoanRepaymentCalculator({ application, onTermsChange }: {
       <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">
         Repayment Calculator <span className="normal-case font-normal text-text-dim">for ${Number(application.loan_amount).toFixed(2)} requested</span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
         <Dropdown
           compact
           label="Product"
@@ -808,6 +837,46 @@ function LoanRepaymentCalculator({ application, onTermsChange }: {
           <input type="number" min={1} max={36} value={tenor} onChange={e => changeTenor(Number(e.target.value))} className="w-full border border-rule rounded-lg px-2.5 py-2 text-xs bg-card" />
         </div>
       </div>
+
+      <div className="mb-4">
+        <label className="block text-[10.5px] text-text-dim mb-1">Repayment Start Date (optional override)</label>
+        <input
+          type="date" value={repaymentStartDate} onChange={e => changeRepaymentStartDate(e.target.value)}
+          placeholder="Auto from disbursement date"
+          className="w-full sm:w-56 border border-rule rounded-lg px-2.5 py-2 text-xs bg-card"
+        />
+      </div>
+
+      {isNegotiated && (
+        <div className="border border-rule rounded-xl p-3.5 mb-4 bg-paper">
+          <div className="text-[10.5px] uppercase tracking-wide text-text-dim font-semibold mb-2.5">Negotiated terms</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-2.5">
+            <div>
+              <label className="block text-[10.5px] text-text-dim mb-1">Monthly Rate (%)</label>
+              <input type="number" step={0.1} value={negotiatedRatePct} onChange={e => setNegotiatedRatePct(Number(e.target.value))} onBlur={recomputeNegotiated} className="w-full border border-rule rounded-lg px-2.5 py-2 text-xs bg-card" />
+            </div>
+            <div>
+              <label className="block text-[10.5px] text-text-dim mb-1">Establishment (%)</label>
+              <input type="number" step={0.1} value={negotiatedEstablishmentPct} onChange={e => setNegotiatedEstablishmentPct(Number(e.target.value))} onBlur={recomputeNegotiated} className="w-full border border-rule rounded-lg px-2.5 py-2 text-xs bg-card" />
+            </div>
+            <div>
+              <label className="block text-[10.5px] text-text-dim mb-1">IMMT (%)</label>
+              <input type="number" step={0.1} value={negotiatedImmtPct} onChange={e => setNegotiatedImmtPct(Number(e.target.value))} onBlur={recomputeNegotiated} className="w-full border border-rule rounded-lg px-2.5 py-2 text-xs bg-card" />
+            </div>
+            <div>
+              <label className="block text-[10.5px] text-text-dim mb-1">Bank Charge (%)</label>
+              <input type="number" step={0.1} value={negotiatedBankPct} onChange={e => setNegotiatedBankPct(Number(e.target.value))} onBlur={recomputeNegotiated} className="w-full border border-rule rounded-lg px-2.5 py-2 text-xs bg-card" />
+            </div>
+          </div>
+          <Dropdown
+            compact
+            label="Repayment Type"
+            value={repaymentType}
+            onChange={v => { setRepaymentType(v); compute(product, borrowerType, disbursementDate, repaymentStartDate, tenor); }}
+            options={NEGOTIATED_REPAYMENT_TYPES.map(rt => ({ value: rt.key, label: rt.label }))}
+          />
+        </div>
+      )}
 
       {computing && !result && <CalculatorResultSkeleton />}
       {error && <div className="text-xs text-accent">{error}</div>}

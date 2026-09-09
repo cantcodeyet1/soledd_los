@@ -31,9 +31,9 @@ export default function CalculatorResult({ result }: { result: CalculatorResultT
 }
 
 function scheduleToCsv(result: CalculatorResultType): string {
-  const header = ['#', 'Date', 'Days', 'Opening', 'Interest', 'Principal', 'Instalment', 'Collection Fee', 'Total Instalment', 'Closing'];
+  const header = ['#', 'Date', 'Opening', 'Interest', 'Principal', 'Instalment', 'Collection Fee', 'Total Instalment', 'Closing'];
   const rows = result.schedule.map(row => [
-    row.no, row.date, row.days, row.opening, row.interest, row.principal,
+    row.no, row.date, row.opening, row.interest, row.principal,
     row.instalmentExclCollectionFee, row.collectionFee, row.totalInstalment, row.closing,
   ]);
   return [header, ...rows].map(r => r.join(',')).join('\n');
@@ -67,7 +67,7 @@ export function AmortisationTable({ result }: { result: CalculatorResultType }) 
         <table className="w-full text-sm min-w-[820px]">
           <thead>
             <tr className="text-left text-[10.5px] uppercase tracking-wide text-text-dim border-b border-rule">
-              <th className="px-4 py-3">#</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Days</th>
+              <th className="px-4 py-3">#</th><th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Opening</th><th className="px-4 py-3">Interest</th><th className="px-4 py-3">Principal</th>
               <th className="px-4 py-3">Instalment</th><th className="px-4 py-3">Collection Fee</th><th className="px-4 py-3">Total Instalment</th><th className="px-4 py-3">Closing</th>
             </tr>
@@ -77,7 +77,6 @@ export function AmortisationTable({ result }: { result: CalculatorResultType }) 
               <tr key={row.no} className="border-b border-rule last:border-0">
                 <td className="px-4 py-2.5 font-mono-brand">{row.no}</td>
                 <td className="px-4 py-2.5 font-mono-brand">{row.date}</td>
-                <td className="px-4 py-2.5 font-mono-brand">{row.days}</td>
                 <td className="px-4 py-2.5 font-mono-brand">${row.opening.toFixed(2)}</td>
                 <td className="px-4 py-2.5 font-mono-brand">${row.interest.toFixed(2)}</td>
                 <td className="px-4 py-2.5 font-mono-brand">${row.principal.toFixed(2)}</td>
