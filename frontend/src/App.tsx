@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Login from './components/Login';
 import ApplicationsView from './components/ApplicationsView';
+import ConversationsView from './components/ConversationsView';
 import CalculatorView from './components/CalculatorView';
 import AgentsView from './components/AgentsView';
 import ProfileView from './components/ProfileView';
@@ -10,10 +11,11 @@ import { getStoredUser, clearSession } from './services/api';
 import { AuthUser } from './types';
 import { useTheme } from './hooks/useTheme';
 
-type View = 'queue' | 'calculator' | 'agents' | 'profile';
+type View = 'queue' | 'chats' | 'calculator' | 'agents' | 'profile';
 
 const NAV: { id: View; label: string }[] = [
   { id: 'queue', label: 'Loans' },
+  { id: 'chats', label: 'Chats' },
   { id: 'calculator', label: 'Calculators' },
   { id: 'agents', label: 'Field Agents' },
 ];
@@ -132,6 +134,7 @@ export default function App() {
 
       <main className="max-w-[1440px] mx-auto px-5 sm:px-8 lg:px-10 py-8 sm:py-12 pb-20">
         {view === 'queue' && <ApplicationsView />}
+        {view === 'chats' && <ConversationsView />}
         {view === 'calculator' && <CalculatorView />}
         {view === 'agents' && <AgentsView />}
         {view === 'profile' && (

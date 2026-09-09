@@ -180,3 +180,34 @@ export interface CalculatorResult {
   totalPayable: number;
   schedule: ScheduleRow[];
 }
+
+export type ConversationStatus = 'ABANDONED' | 'AWAITING_DOCS' | 'IN_PROGRESS' | 'COMPLETED';
+
+export interface Conversation {
+  phone: string;
+  name: string | null;
+  status: ConversationStatus;
+  flow: string | null;
+  step: string | null;
+  botPaused: boolean;
+  lastMessageText: string | null;
+  lastMessageDirection: 'inbound' | 'outbound' | null;
+  lastMessageAt: string | null;
+}
+
+export interface Message {
+  id: string;
+  customer_phone: string;
+  message_text: string | null;
+  direction: 'inbound' | 'outbound';
+  whatsapp_message_id: string | null;
+  timestamp: string;
+  sent_by: 'customer' | 'bot';
+}
+
+export interface CustomerRecord {
+  phone_number: string;
+  name: string | null;
+  created_at: string;
+  updated_at: string;
+}

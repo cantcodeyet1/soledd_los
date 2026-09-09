@@ -25,12 +25,13 @@ const { getEffectivePassword, requireAdmin } = require('../middleware/auth');
 
 router.get('/applications', async (req, res) => {
   try {
-    const { category, status, search, agent_phone } = req.query;
+    const { category, status, search, agent_phone, applicant_phone } = req.query;
     let query = supabase.from('applications').select('*').order('created_at', { ascending: false });
 
     if (category) query = query.eq('category', category);
     if (status) query = query.eq('status', status);
     if (agent_phone) query = query.eq('agent_phone', agent_phone);
+    if (applicant_phone) query = query.eq('applicant_phone', applicant_phone);
     if (search) {
       query = query.or(`full_name.ilike.%${search}%,reference_number.ilike.%${search}%,national_id.ilike.%${search}%`);
     }
@@ -234,6 +235,83 @@ router.get('/applications/export/crystal', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('GET /applications/export/crystal error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Conversations ──────────────────────────────────────────────────────────
+// conversation_states is one persistent row per WhatsApp number (flow/step
+// null out on completion but the row stays, per flow.service.js's
+// clearFlowState), so it doubles as a customer index with reliable
+// last-activity timestamps — no separate "conversations list" table needed.
+
+const ABANDONED_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24h with no reply, still mid-flow
+const RECENT_MESSAGES_SCAN_LIMIT = 500; // enough to find each active phone's latest message without scanning the whole log
+
+function deriveConversationStatus(state) {
+  if (!state || !state.flow) return 'COMPLETED';
+  if (state.step === 'DOCUMENT_UPLOAD') return 'AWAITING_DOCS';
+  const lastActive = state.last_message_at ? new Date(state.last_message_at).getTime() : 0;
+  if (Date.now() - lastActive > ABANDONED_THRESHOLD_MS) return 'ABANDONED';
+  return 'IN_PROGRESS';
+}
+
+router.get('/conversations', async (req, res) => {
+  try {
+    const { data: states, error: stateErr } = await supabase
+      .from('conversation_states')
+      .select('*')
+      .order('last_message_at', { ascending: false });
+    if (stateErr) throw stateErr;
+
+    const phones = states.map(s => s.customer_phone);
+    const [{ data: customers }, { data: recentMessages }] = await Promise.all([
+      phones.length ? supabase.from('customers').select('phone_number, name').in('phone_number', phones) : { data: [] },
+      supabase.from('conversations').select('customer_phone, message_text, direction, timestamp').order('timestamp', { ascending: false }).limit(RECENT_MESSAGES_SCAN_LIMIT),
+    ]);
+
+    const nameByPhone = new Map((customers || []).map(c => [c.phone_number, c.name]));
+    const lastMessageByPhone = new Map();
+    for (const m of recentMessages || []) {
+      if (!lastMessageByPhone.has(m.customer_phone)) lastMessageByPhone.set(m.customer_phone, m);
+    }
+
+    const conversations = states.map(s => {
+      const last = lastMessageByPhone.get(s.customer_phone);
+      return {
+        phone: s.customer_phone,
+        name: nameByPhone.get(s.customer_phone) || null,
+        status: deriveConversationStatus(s),
+        flow: s.flow,
+        step: s.step,
+        botPaused: s.bot_paused,
+        lastMessageText: last?.message_text || null,
+        lastMessageDirection: last?.direction || null,
+        lastMessageAt: s.last_message_at,
+      };
+    });
+
+    res.json({ conversations });
+  } catch (err) {
+    console.error('GET /conversations error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/conversations/:phone/messages', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('customer_phone', req.params.phone)
+      .order('timestamp', { ascending: true });
+    if (error) throw error;
+
+    const { data: customer } = await supabase.from('customers').select('*').eq('phone_number', req.params.phone).single();
+
+    res.json({ messages: data, customer: customer || null });
+  } catch (err) {
+    console.error('GET /conversations/:phone/messages error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
