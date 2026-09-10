@@ -502,12 +502,20 @@ router.get('/conversations', async (req, res) => {
     if (stateErr) throw stateErr;
 
     const phones = states.map(s => s.customer_phone);
-    const [{ data: customers }, { data: recentMessages }] = await Promise.all([
+    const [{ data: customers }, { data: recentMessages }, { data: agentRows }] = await Promise.all([
       phones.length ? supabase.from('customers').select('phone_number, name').in('phone_number', phones) : { data: [] },
       supabase.from('conversations').select('customer_phone, message_text, direction, timestamp').order('timestamp', { ascending: false }).limit(RECENT_MESSAGES_SCAN_LIMIT),
+      supabase.from('agents').select('phone_number, name'),
     ]);
 
     const nameByPhone = new Map((customers || []).map(c => [c.phone_number, c.name]));
+    // Match agents by exact number and by digits-only, since a number can be
+    // stored slightly differently in `agents` vs how it arrives on the webhook.
+    const agentByPhone = new Map();
+    for (const a of agentRows || []) {
+      agentByPhone.set(a.phone_number, a);
+      agentByPhone.set(String(a.phone_number).replace(/\D/g, ''), a);
+    }
     const lastMessageByPhone = new Map();
     for (const m of recentMessages || []) {
       if (!lastMessageByPhone.has(m.customer_phone)) lastMessageByPhone.set(m.customer_phone, m);
@@ -515,13 +523,15 @@ router.get('/conversations', async (req, res) => {
 
     const conversations = states.map(s => {
       const last = lastMessageByPhone.get(s.customer_phone);
+      const agent = agentByPhone.get(s.customer_phone) || agentByPhone.get(String(s.customer_phone).replace(/\D/g, ''));
       return {
         phone: s.customer_phone,
-        name: nameByPhone.get(s.customer_phone) || null,
+        name: (agent && agent.name) || nameByPhone.get(s.customer_phone) || null,
         status: deriveConversationStatus(s),
         flow: s.flow,
         step: s.step,
         botPaused: s.bot_paused,
+        isAgent: !!agent,
         lastMessageText: last?.message_text || null,
         lastMessageDirection: last?.direction || null,
         lastMessageAt: s.last_message_at,

@@ -389,6 +389,7 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
           application={selected}
           onClose={() => setSelected(null)}
           onRequestStatusChange={mode => setPendingAction({ app: selected, mode })}
+          onMoveToReview={() => updateStatus(selected.id, 'IN_REVIEW')}
           onExportPdf={() => exportPdf(selected)}
           onLoanTermsChange={terms => updateLoanTerms(selected.id, terms)}
           onAssignAgent={phone => updateAgentAssignment(selected.id, phone)}
@@ -642,10 +643,11 @@ function readStoredPanelWidth(): number {
   return Math.round(Math.min(920, Math.max(PANEL_MIN, window.innerWidth * 0.5)));
 }
 
-function ApplicationDetail({ application, onClose, onRequestStatusChange, onExportPdf, onLoanTermsChange, onAssignAgent, onSaveDetails, onArchive, onDelete }: {
+function ApplicationDetail({ application, onClose, onRequestStatusChange, onMoveToReview, onExportPdf, onLoanTermsChange, onAssignAgent, onSaveDetails, onArchive, onDelete }: {
   application: Application;
   onClose: () => void;
   onRequestStatusChange: (mode: 'approve' | 'reject') => void;
+  onMoveToReview: () => void;
   onExportPdf: () => void;
   onLoanTermsChange: (terms: Partial<Pick<Application, 'loan_product' | 'borrower_type' | 'disbursement_date'>>) => void;
   onAssignAgent: (agentPhone: string | null) => Promise<void>;
@@ -773,9 +775,20 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
           downloadName={d => docDownloadName(d.label, application.full_name, d.storage_path)}
         />
 
-        <div className="flex gap-2 mb-4 flex-wrap">
-          <button onClick={() => onRequestStatusChange('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
-          <button onClick={() => onRequestStatusChange('reject')} className="bg-accent-deep text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Reject</button>
+        <div className="flex gap-2 mb-4 flex-wrap items-center">
+          {application.status === 'IN_REVIEW' ? (
+            <>
+              <button onClick={() => onRequestStatusChange('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
+              <button onClick={() => onRequestStatusChange('reject')} className="bg-accent-deep text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Reject</button>
+            </>
+          ) : (
+            <>
+              <span className={`text-xs font-bold uppercase tracking-wide px-3 py-1.5 rounded-full ${STATUS_PILL[application.status]}`}>
+                {application.status.replace('_', ' ')}
+              </span>
+              <button onClick={onMoveToReview} className="text-xs font-semibold text-accent-bright hover:underline">Move back to review</button>
+            </>
+          )}
           <button onClick={onExportPdf} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors">Export PDF</button>
           <button onClick={onArchive} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors">
             {application.archived ? 'Restore' : 'Archive'}

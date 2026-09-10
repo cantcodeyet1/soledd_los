@@ -58,6 +58,7 @@ export default function ConversationsView({ onOpenApplication }: ConversationsVi
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('all');
+  const [agentsOnly, setAgentsOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
@@ -77,11 +78,14 @@ export default function ConversationsView({ onOpenApplication }: ConversationsVi
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return conversations.filter(c => {
+      if (agentsOnly && !c.isAgent) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
       if (q && !(c.name || '').toLowerCase().includes(q) && !c.phone.includes(q)) return false;
       return true;
     });
-  }, [conversations, statusFilter, search]);
+  }, [conversations, statusFilter, agentsOnly, search]);
+
+  const agentCount = useMemo(() => conversations.filter(c => c.isAgent).length, [conversations]);
 
   const selected = conversations.find(c => c.phone === selectedPhone) || null;
 
@@ -114,6 +118,14 @@ export default function ConversationsView({ onOpenApplication }: ConversationsVi
                 className="w-full border border-rule rounded-full px-4 py-2 text-xs focus:outline-none focus:border-accent bg-card mb-2.5"
               />
               <div className="flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => setAgentsOnly(v => !v)}
+                  className={`shrink-0 px-2.5 py-1 text-[11px] font-semibold rounded-full border transition-colors duration-150 ${
+                    agentsOnly ? 'bg-sage border-sage text-white' : 'border-rule text-text-dim hover:border-ink'
+                  }`}
+                >
+                  Field Agents{agentCount ? ` (${agentCount})` : ''}
+                </button>
                 {STATUS_CHIPS.map(c => (
                   <button
                     key={c.id}
@@ -143,12 +155,15 @@ export default function ConversationsView({ onOpenApplication }: ConversationsVi
                     selectedPhone === c.phone ? 'bg-card-tint' : 'hover:bg-card-tint'
                   }`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-info-bg text-info flex items-center justify-center text-xs font-bold shrink-0">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${c.isAgent ? 'bg-sage-bg text-sage' : 'bg-info-bg text-info'}`}>
                     {initialsFrom(c.name, c.phone)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-sm truncate">{c.name || c.phone}</span>
+                      <span className="font-semibold text-sm truncate">
+                        {c.name || c.phone}
+                        {c.isAgent && <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-sage-bg text-sage align-middle">Agent</span>}
+                      </span>
                       <span className="text-[10.5px] text-text-dim shrink-0">{relativeTime(c.lastMessageAt)}</span>
                     </div>
                     <div className="text-xs text-text-dim truncate mt-0.5">

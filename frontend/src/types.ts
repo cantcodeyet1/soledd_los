@@ -211,6 +211,7 @@ export interface Conversation {
   flow: string | null;
   step: string | null;
   botPaused: boolean;
+  isAgent?: boolean;
   lastMessageText: string | null;
   lastMessageDirection: 'inbound' | 'outbound' | null;
   lastMessageAt: string | null;
