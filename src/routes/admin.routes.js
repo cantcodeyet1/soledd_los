@@ -6,8 +6,6 @@
 'use strict';
 
 const express = require('express');
-const axios = require('axios');
-const JSZip = require('jszip');
 const router = express.Router();
 
 const { supabase } = require('../models/supabase');
@@ -22,18 +20,6 @@ const settingsService = require('../services/settings.service');
 const officerAuth = require('../services/officerAuth.service');
 const emailService = require('../services/email.service');
 const { getEffectivePassword, requireAdmin } = require('../middleware/auth');
-
-const FIELD_LABELS = {
-  full_name: 'full name', national_id: 'national ID', employer_name: 'employer',
-  loan_amount: 'loan amount', repayment_months: 'repayment period',
-  lms_loan_number: 'LMS loan number', applicant_phone: 'phone number',
-  nextOfKin: 'next of kin', contactLine: 'contact details', personalDetails: 'personal details',
-  bankDetails: 'bank details', bankersDetails: 'banker details', nameLine: 'name',
-};
-function humanizeFieldName(k) {
-  return FIELD_LABELS[k] || k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
-}
-const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // ─── Activity timeline ──────────────────────────────────────────────────────
 // Best-effort audit log. Never throw from here — a failed log line must not
@@ -82,18 +68,7 @@ router.get('/applications', async (req, res) => {
       ({ data, error } = await baseQuery(false));
     }
     if (error) throw error;
-
-    // Annotate each with its document count so the dashboard can flag
-    // applications still waiting on documents.
-    const ids = (data || []).map(a => a.id);
-    const countByApp = new Map();
-    if (ids.length) {
-      const { data: docRows } = await supabase.from('documents').select('application_id').in('application_id', ids);
-      for (const d of docRows || []) countByApp.set(d.application_id, (countByApp.get(d.application_id) || 0) + 1);
-    }
-    const applications = (data || []).map(a => ({ ...a, documents_count: countByApp.get(a.id) || 0 }));
-
-    res.json({ applications });
+    res.json({ applications: data });
   } catch (err) {
     console.error('GET /applications error:', err.message);
     res.status(500).json({ error: err.message });
@@ -148,39 +123,6 @@ router.get('/applications/:id/documents', async (req, res) => {
     })));
     res.json({ documents: withUrls });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/** All of an application's documents bundled into one .zip. */
-router.get('/applications/:id/documents/zip', async (req, res) => {
-  try {
-    const { data: application } = await supabase
-      .from('applications').select('reference_number, full_name').eq('id', req.params.id).single();
-    const docs = await documentStorage.listDocuments(req.params.id);
-    if (!docs.length) return res.status(404).json({ error: 'No documents' });
-
-    const zip = new JSZip();
-    const used = new Map();
-    for (const d of docs) {
-      const url = await documentStorage.getSignedUrl(d.storage_path);
-      const buf = Buffer.from((await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 })).data);
-      const ext = (d.storage_path.match(/\.([a-z0-9]+)$/i) || [, 'bin'])[1];
-      let name = `${d.label}`.replace(/[^\w .'-]/g, '').trim() || 'document';
-      const n = (used.get(name) || 0) + 1;
-      used.set(name, n);
-      if (n > 1) name += ` (${n})`;
-      zip.file(`${name}.${ext}`, buf);
-    }
-    const out = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-
-    const stem = [application?.reference_number, (application?.full_name || '').replace(/[^\w .'-]/g, '').trim()]
-      .filter(Boolean).join(' ') || 'documents';
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${stem} documents.zip"`);
-    res.send(out);
-  } catch (err) {
-    console.error('GET /applications/:id/documents/zip error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -320,13 +262,8 @@ router.patch('/applications/:id/details', async (req, res) => {
 
     if (error || !application) return res.status(404).json({ error: error?.message || 'Not found' });
 
-    const cols = Object.keys(updates).filter(k => k !== 'updated_at' && k !== 'extra_details');
-    const extraKeys = body.extra_details && typeof body.extra_details === 'object' ? Object.keys(body.extra_details) : [];
-    const labels = [...cols, ...extraKeys].map(humanizeFieldName);
-    const summary = labels.length === 1 ? `${cap(labels[0])} edited`
-      : labels.length ? `Edited: ${labels.join(', ')}` : 'Details edited';
-    await logActivity(req.params.id, 'DETAILS_EDITED', summary,
-      { fields: [...cols, ...extraKeys.map(k => `extra_details.${k}`)] }, req);
+    const changed = Object.keys(updates).filter(k => k !== 'updated_at');
+    await logActivity(req.params.id, 'DETAILS_EDITED', `Edited: ${changed.join(', ')}`, { fields: changed }, req);
 
     res.json({ application });
   } catch (err) {
@@ -369,40 +306,6 @@ router.get('/applications/:id/activity', async (req, res) => {
     res.json({ activity: data });
   } catch (err) {
     console.error('GET /applications/:id/activity error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/** Full activity log as a CSV report, with the detail JSON expanded. */
-router.get('/applications/:id/activity/report', async (req, res) => {
-  try {
-    const { data: application } = await supabase
-      .from('applications').select('reference_number, full_name').eq('id', req.params.id).single();
-    const { data: rows, error } = await supabase
-      .from('application_activity').select('*').eq('application_id', req.params.id)
-      .order('created_at', { ascending: true });
-    if (error) throw error;
-
-    const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-    const lines = [['When', 'Type', 'Summary', 'By', 'Email', 'Details'].map(esc).join(',')];
-    for (const r of rows || []) {
-      lines.push([
-        new Date(r.created_at).toLocaleString('en-ZW', { timeZone: 'Africa/Harare' }),
-        r.type,
-        r.summary,
-        r.actor_name || 'WhatsApp bot',
-        r.actor_email || '',
-        JSON.stringify(r.detail || {}),
-      ].map(esc).join(','));
-    }
-
-    const stem = [application?.reference_number, (application?.full_name || '').replace(/[^\w .'-]/g, '').trim()]
-      .filter(Boolean).join(' ') || 'application';
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${stem} activity.csv"`);
-    res.send('﻿' + lines.join('\r\n'));
-  } catch (err) {
-    console.error('GET /applications/:id/activity/report error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

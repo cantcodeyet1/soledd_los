@@ -18,8 +18,6 @@
 
 'use strict';
 
-const { checkNationalId, checkContactLine, checkAmount } = require('../utils/normalise');
-
 /** "Please send these in one message:\n\n* Item one\n* Item two"
  *  (WhatsApp renders a line starting with "* " as a bullet). */
 function bulletPrompt(intro, items) {
@@ -42,8 +40,8 @@ const PRIVATE_SECTOR_PERIODS = [
 function governmentQuestions(employerQuestion) {
   const qs = [
     { field: 'nameLine',           prompt: 'What is your title, first name(s), and surname? (e.g. Mr Tinashe Moyo)', type: 'text' },
-    { field: 'nationalId',         prompt: 'What is your National ID number?', type: 'text', validate: checkNationalId },
-    { field: 'contactLine',        prompt: bulletPrompt('Please send these in one message:', ['Telephone / mobile number', 'Residential address']), type: 'text', validate: checkContactLine },
+    { field: 'nationalId',         prompt: 'What is your National ID number?', type: 'text' },
+    { field: 'contactLine',        prompt: bulletPrompt('Please send these in one message:', ['Telephone / mobile number', 'Residential address']), type: 'text' },
     { field: 'nextOfKin',          prompt: bulletPrompt("Your next of kin's details, in one message:", ['Full name', 'Address', 'Phone number']), type: 'text' },
   ];
   if (employerQuestion) {
@@ -53,7 +51,7 @@ function governmentQuestions(employerQuestion) {
     { field: 'bankDetails',    prompt: bulletPrompt('Your bank details, in one message:', ['Bank name', 'Account number']), type: 'text' },
     { field: 'sourceOfIncome', prompt: 'What is your source of income to meet the repayment?', type: 'choice', options: ['Monthly Salary', 'Remittances from Diaspora', 'Sale of Asset', 'Other'] },
     { field: 'purposeOfLoan',  prompt: 'What is the purpose of this loan?', type: 'text' },
-    { field: 'loanAmount',     prompt: 'How much would you like to borrow, in USD?', type: 'amount', validate: checkAmount },
+    { field: 'loanAmount',     prompt: 'How much would you like to borrow, in USD?', type: 'amount' },
     { field: 'repaymentMonths', prompt: 'Choose a repayment period.', type: 'period', options: GOV_SME_PERIODS },
   );
   return qs;
@@ -77,7 +75,7 @@ const SME_QUESTIONS = [
   { field: 'bankDetails',      prompt: bulletPrompt('Your bank details, in one message:', ['Bank name', 'Branch', 'Account number']), type: 'text' },
   { field: 'purposeOfLoan',    prompt: 'What is the purpose of this loan?', type: 'text' },
   { field: 'transactionHistory', prompt: 'How many times have you successfully done a similar transaction? Please provide details.', type: 'text' },
-  { field: 'loanAmount',       prompt: 'How much would you like to borrow, in USD?', type: 'amount', validate: checkAmount },
+  { field: 'loanAmount',       prompt: 'How much would you like to borrow, in USD?', type: 'amount' },
   { field: 'repaymentMonths',  prompt: 'Choose a repayment period.', type: 'period', options: GOV_SME_PERIODS },
 ];
 
@@ -95,7 +93,7 @@ const PRIVATE_SECTOR_QUESTIONS = [
   },
   { field: 'childrenDetails', prompt: 'Do you have children? If so, how many, which school(s) do they attend, and what are the total school fees? (reply N/A if none)', type: 'text' },
   { field: 'monthlyBudget',   prompt: bulletPrompt('Your monthly budget, in one message:', ['Total income', 'Total living expenses', 'Mortgage / rent (if any)']), type: 'text' },
-  { field: 'loanAmount',      prompt: 'How much would you like to borrow, in USD?', type: 'amount', validate: checkAmount },
+  { field: 'loanAmount',      prompt: 'How much would you like to borrow, in USD?', type: 'amount' },
   { field: 'repaymentMonths', prompt: 'Choose a repayment period.', type: 'period', options: PRIVATE_SECTOR_PERIODS },
   { field: 'purposeOfLoan',   prompt: 'What is the purpose of this loan?', type: 'choice', options: ['Working Capital', 'Asset finance', 'Inputs finance', 'Solar Asset finance', 'Other'] },
   { field: 'purchaseDetails', prompt: 'If financing a purchase, please provide the invoice amount and your deposit (reply N/A if not applicable).', type: 'text' },

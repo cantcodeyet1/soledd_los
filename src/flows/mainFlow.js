@@ -15,7 +15,6 @@
 const { supabase } = require('../models/supabase');
 const applicationEngine = require('./applicationEngine');
 const documentUploadEngine = require('./documentUploadEngine');
-const { normaliseName } = require('../utils/normalise');
 
 const ENTRY_STEP = 'WELCOME';
 
@@ -46,10 +45,9 @@ function mainMenuMessage() {
       {
         title: 'Other',
         rows: [
-          { id: 'ACTION_CHECK_LOAN',   title: 'Check on a loan',       description: 'See the status of an application you submitted' },
           { id: 'ACTION_SUBMIT_DOCS',  title: 'Submit loan documents', description: 'Send docs for an application you already started' },
-          { id: 'ACTION_SPEAK_AGENT',  title: 'Speak to an Agent',     description: 'Talk to a Soledd representative' },
-          { id: 'ACTION_BECOME_AGENT', title: 'Become an Agent',       description: 'Apply to become a Soledd agent' },
+          { id: 'ACTION_SPEAK_AGENT',  title: 'Speak to an Agent', description: 'Talk to a Soledd representative' },
+          { id: 'ACTION_BECOME_AGENT', title: 'Become an Agent',   description: 'Apply to become a Soledd agent' },
         ],
       },
     ],
@@ -115,51 +113,6 @@ async function startDocumentResume(phone) {
   };
 }
 
-const STATUS_WORDS = {
-  APPROVED: 'Approved. A credit officer will be in touch about disbursement.',
-  REJECTED: 'Not approved this time. You are welcome to reapply in future.',
-};
-
-/** "Check on a loan" — status of an application submitted from this number. */
-async function lookupLoanStatus(phone, text) {
-  const raw = (text || '').trim();
-  const m = raw.match(/LOS[-\s]?0*\d+/i);
-  const ref = m ? m[0].toUpperCase().replace(/\s+/g, '-').replace('LOS0', 'LOS-0') : raw;
-
-  const { data: app } = await supabase
-    .from('applications')
-    .select('id, reference_number, status, full_name, loan_amount')
-    .eq('applicant_phone', phone)
-    .ilike('reference_number', ref)
-    .maybeSingle();
-
-  if (!app) {
-    return {
-      messages: [questionWithReturn(
-        `I couldn't find ${ref || 'that reference'} under your number. Please check it and reply again, or tap Main Menu.`
-      )],
-      nextStep: 'LOAN_STATUS_LOOKUP',
-      updatedData: {},
-    };
-  }
-
-  let line = STATUS_WORDS[app.status];
-  if (!line) {
-    const { count } = await supabase
-      .from('documents')
-      .select('id', { count: 'exact', head: true })
-      .eq('application_id', app.id);
-    line = count ? 'Under review by a credit officer.' : 'Waiting for your documents. Choose *Submit loan documents* from the menu to send them.';
-  }
-
-  return {
-    messages: [finalWithReturn(
-      `*${app.reference_number}* for $${Number(app.loan_amount).toFixed(2)}\nStatus: ${line}`
-    )],
-    endFlow: true,
-  };
-}
-
 function matchCategoryByKeyword(text) {
   const t = (text || '').toLowerCase();
   if (t.includes('civil') || t.includes('ssb')) return CATEGORIES.find(c => c.code === 'SSB');
@@ -220,14 +173,6 @@ async function handleStep(step, { text, buttonId, media, flowData, customer }) {
       return startDocumentResume(customer.phone_number);
     }
 
-    if (buttonId === 'ACTION_CHECK_LOAN' || /check.*loan|loan.*status|my.*application/i.test(text || '')) {
-      return {
-        messages: [questionWithReturn('Reply with your loan reference number (for example LOS-0142).')],
-        nextStep: 'LOAN_STATUS_LOOKUP',
-        updatedData: {},
-      };
-    }
-
     return {
       messages: [{ ...mainMenuMessage(), body: `Sorry, I didn't catch that.\n\n${mainMenuMessage().body}` }],
       nextStep: 'MAIN_MENU',
@@ -253,22 +198,14 @@ async function handleStep(step, { text, buttonId, media, flowData, customer }) {
     return applicationEngine.handleRepeatConfirm({ text, buttonId, flowData });
   }
 
-  // ── LOAN_STATUS_LOOKUP — customer checking on their own application ──────
-  if (step === 'LOAN_STATUS_LOOKUP') {
-    return lookupLoanStatus(customer.phone_number, text);
-  }
-
-  // ── DOCUMENT_UPLOAD_INTRO / DOCUMENT_UPLOAD — document collection engine ─
-  if (step === 'DOCUMENT_UPLOAD_INTRO') {
-    return documentUploadEngine.handleIntro({ text, buttonId, flowData });
-  }
+  // ── DOCUMENT_UPLOAD — delegates to the document collection engine ────────
   if (step === 'DOCUMENT_UPLOAD') {
     return documentUploadEngine.handleUpload({ text, buttonId, media, flowData });
   }
 
   // ── AGENT_NAME_CAPTURE ───────────────────────────────────────────────────
   if (step === 'AGENT_NAME_CAPTURE') {
-    const fullName = normaliseName((text || '').trim());
+    const fullName = (text || '').trim();
     if (fullName.length < 2) {
       return {
         messages: [questionWithReturn('Please enter your full name.')],

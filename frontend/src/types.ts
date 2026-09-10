@@ -27,7 +27,6 @@ export interface Application {
   archived: boolean;
   lms_loan_number: string | null;
   agent_commission_paid?: boolean;
-  documents_count?: number;
   created_at: string;
   updated_at: string;
 }

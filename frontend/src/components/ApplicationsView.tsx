@@ -75,18 +75,11 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
   const [pendingAction, setPendingAction] = useState<{ app: Application; mode: 'approve' | 'reject' } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
-  const [awaitingDocsOnly, setAwaitingDocsOnly] = useState(false);
-  const [agentNames, setAgentNames] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('soledd_queue_view') as ViewMode) || 'grid');
 
   function setMode(m: ViewMode) {
     setViewMode(m);
     localStorage.setItem('soledd_queue_view', m);
-  }
-
-  function agentLabel(phone: string | null): string {
-    if (!phone) return '';
-    return agentNames[phone] ? `${agentNames[phone]} (${phone})` : phone;
   }
 
   async function load(archived = showArchived) {
@@ -97,16 +90,6 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
     setAllApps(appsRes.applications);
     setStats(statsRes);
     setLoading(false);
-  }
-
-  useEffect(() => {
-    requestJson('/agents')
-      .then(r => setAgentNames(Object.fromEntries((r.agents || []).map((a: any) => [a.phone_number, a.name || '']).filter(([, n]: any) => n))))
-      .catch(() => {});
-  }, []);
-
-  function isAwaitingDocs(a: Application) {
-    return a.status === 'IN_REVIEW' && (a.documents_count ?? 0) === 0;
   }
 
   // Load once, then refresh from the DB every 5 minutes. Filtering below
@@ -142,7 +125,6 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
     const min = minAmount.trim() ? parseFloat(minAmount) : null;
     const max = maxAmount.trim() ? parseFloat(maxAmount) : null;
     return allApps.filter(a => {
-      if (awaitingDocsOnly && !isAwaitingDocs(a)) return false;
       if (categories.length > 0 && !categories.includes(a.category)) return false;
       if (statuses.length > 0 && !statuses.includes(a.status)) return false;
       if (min !== null && !Number.isNaN(min) && Number(a.loan_amount) < min) return false;
@@ -150,10 +132,7 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
       if (q && !a.full_name.toLowerCase().includes(q) && !a.reference_number.toLowerCase().includes(q) && !(a.national_id || '').toLowerCase().includes(q)) return false;
       return true;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allApps, categories, statuses, minAmount, maxAmount, search, awaitingDocsOnly]);
-
-  const awaitingDocsCount = useMemo(() => allApps.filter(isAwaitingDocs).length, [allApps]);
+  }, [allApps, categories, statuses, minAmount, maxAmount, search]);
 
   const advancedActive = categories.length > 1 || statuses.length > 0 || !!minAmount.trim() || !!maxAmount.trim();
 
@@ -292,16 +271,6 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
             onChange={e => setSearch(e.target.value)}
             className="border border-rule rounded-full px-4 py-2 text-xs w-full sm:w-56 focus:outline-none focus:border-accent bg-card"
           />
-          {!showArchived && (
-            <button
-              onClick={() => setAwaitingDocsOnly(v => !v)}
-              className={`shrink-0 px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-colors duration-150 ${
-                awaitingDocsOnly ? 'bg-warn border-warn text-white' : 'border-rule text-text-dim hover:border-ink'
-              }`}
-            >
-              Awaiting docs{awaitingDocsCount ? ` (${awaitingDocsCount})` : ''}
-            </button>
-          )}
           <button
             onClick={toggleArchived}
             className={`shrink-0 px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-colors duration-150 ${
@@ -356,21 +325,14 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
                 </div>
                 <span className="font-mono-brand text-[11px] text-text-dim shrink-0">{a.reference_number}</span>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                <span className={`inline-flex w-fit items-center text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${STATUS_PILL[a.status]}`}>
-                  {a.status.replace('_', ' ')}
-                </span>
-                {isAwaitingDocs(a) && (
-                  <span className="inline-flex w-fit items-center text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full bg-warn-bg text-warn">
-                    Awaiting docs
-                  </span>
-                )}
-              </div>
+              <span className={`inline-flex w-fit items-center text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${STATUS_PILL[a.status]}`}>
+                {a.status.replace('_', ' ')}
+              </span>
               <div className="flex justify-between items-center border-t border-rule pt-3.5">
                 <span className="font-mono-brand font-bold text-base">${Number(a.loan_amount).toFixed(2)}</span>
                 <span className={`text-[11px] px-2.5 py-1 rounded-full border border-rule ${CAT_STYLE[a.category]}`}>{CATEGORY_LABELS[a.category]}</span>
               </div>
-              <div className="text-[11px] text-text-dim">{a.agent_phone ? `Agent: ${agentLabel(a.agent_phone)}` : 'No agent'}</div>
+              <div className="text-[11px] text-text-dim">{a.agent_phone ? `Agent: ${a.agent_phone}` : 'No agent'}</div>
             </button>
           ))}
         </div>
@@ -401,11 +363,8 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
                     </td>
                     <td className="px-5 py-3.5"><span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${CAT_STYLE[a.category]}`}>{CATEGORY_LABELS[a.category]}</span></td>
                     <td className="px-5 py-3.5 font-mono-brand font-semibold">${Number(a.loan_amount).toFixed(2)}</td>
-                    <td className="px-5 py-3.5 text-text-dim">{a.agent_phone ? agentLabel(a.agent_phone) : '-'}</td>
-                    <td className="px-5 py-3.5">
-                      <span className={`text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${STATUS_PILL[a.status]}`}>{a.status.replace('_', ' ')}</span>
-                      {isAwaitingDocs(a) && <span className="ml-1.5 text-[10.5px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-warn-bg text-warn">Awaiting docs</span>}
-                    </td>
+                    <td className="px-5 py-3.5 text-text-dim">{a.agent_phone || '-'}</td>
+                    <td className="px-5 py-3.5"><span className={`text-[10.5px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${STATUS_PILL[a.status]}`}>{a.status.replace('_', ' ')}</span></td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
                         <button onClick={() => setPendingAction({ app: a, mode: 'approve' })} title="Approve" className="w-7 h-7 rounded-full border border-rule flex items-center justify-center text-text-dim hover:border-sage hover:text-sage transition-colors">
@@ -814,11 +773,6 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onMove
           documents={documents}
           loading={docsLoading}
           downloadName={d => docDownloadName(d.label, application.full_name, d.storage_path)}
-          onDownloadZip={async () => {
-            const blob = await requestBlob(`/applications/${application.id}/documents/zip`);
-            const name = `${application.reference_number} ${application.full_name.replace(/[^\w .'-]/g, '').trim()} documents.zip`;
-            downloadBlob(blob, name);
-          }}
         />
 
         <div className="flex gap-2 mb-4 flex-wrap items-center">
@@ -916,19 +870,9 @@ function ActivityTimeline({ applicationId }: { applicationId: string }) {
     requestJson(`/applications/${applicationId}/activity`).then(r => setActivity(r.activity)).catch(() => setActivity([]));
   }, [applicationId]);
 
-  async function downloadReport() {
-    const blob = await requestBlob(`/applications/${applicationId}/activity/report`);
-    downloadBlob(blob, `activity ${applicationId.slice(0, 8)}.csv`);
-  }
-
   return (
     <div className="border-t border-rule pt-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-xs uppercase tracking-wide text-text-dim font-semibold">Activity</div>
-        {activity !== null && activity.length > 0 && (
-          <button onClick={downloadReport} className="text-xs font-semibold text-accent-bright hover:underline">Download report</button>
-        )}
-      </div>
+      <div className="text-xs uppercase tracking-wide text-text-dim mb-4 font-semibold">Activity</div>
       {activity === null && (
         <div className="flex flex-col gap-2">
           {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-9 rounded-lg skeleton animate-shimmer" />)}

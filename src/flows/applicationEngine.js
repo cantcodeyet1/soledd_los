@@ -12,7 +12,6 @@ const { questionsForCategory } = require('./applicationQuestions');
 const { verificationPromiseText } = require('../utils/businessHours');
 const documentUploadEngine = require('./documentUploadEngine');
 const { REQUIRED_DOCUMENTS } = require('./requiredDocuments');
-const { normaliseName, tidyLine } = require('../utils/normalise');
 
 const RETURN_BUTTON = { id: 'RETURN_MENU', title: '🔙 Main Menu' };
 const EDIT_BUTTON = { id: 'EDIT_ANSWER', title: '✏️ Edit answer' };
@@ -202,26 +201,21 @@ function buildApplicationData(categoryCode, answers) {
   // SME asks title+first name (nameLine) separately from surname/company name,
   // since the latter also doubles as employer_name. Other categories combine
   // title+first+surname into one nameLine question.
-  const rawName = categoryCode === 'SME'
+  const fullName = categoryCode === 'SME'
     ? `${answers.nameLine || ''} ${answers.surname || ''}`.trim() || 'Applicant'
     : (answers.nameLine || 'Applicant');
-  const fullName = normaliseName(rawName) || 'Applicant';
 
   let employerName = null;
   if (categoryCode === 'SME') {
-    // surname doubles as the registered company name — title-case people
-    // names, leave an obvious company (has Ltd/Pvt/etc, or all caps) as-is.
-    employerName = answers.surname
-      ? (/\b(ltd|pvt|plc|inc|co|company|enterprises?|trading|holdings?)\b/i.test(answers.surname) ? tidyLine(answers.surname) : normaliseName(answers.surname))
-      : null;
+    employerName = answers.surname || null; // form combines surname/registered company name
   } else if (answers.employerName) {
-    employerName = tidyLine(answers.employerName);
+    employerName = answers.employerName;
   }
 
   return {
     categoryCode,
     fullName,
-    nationalId: (answers.nationalId || '').toString().trim().toUpperCase(),
+    nationalId: answers.nationalId,
     employerName,
     loanAmount: answers.loanAmount,
     repaymentMonths: answers.repaymentMonths,
@@ -270,16 +264,6 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
     const prog = progressLabel(questions, flowData.answers, flowData.qIndex);
     return {
       messages: [{ ...buildQuestionMessage(q, hasPrior), body: `${prog}Sorry, I didn't catch that.\n\n${q.prompt}` }],
-      nextStep: 'APPLICATION_CAPTURE',
-      updatedData: {},
-    };
-  }
-
-  const validationError = q.validate ? q.validate(value) : null;
-  if (validationError) {
-    const prog = progressLabel(questions, flowData.answers, flowData.qIndex);
-    return {
-      messages: [{ ...buildQuestionMessage(q, hasPrior), body: `${prog}${validationError}` }],
       nextStep: 'APPLICATION_CAPTURE',
       updatedData: {},
     };
@@ -429,11 +413,10 @@ function handleEditCapture({ text, buttonId, flowData }) {
   const questions = questionsForCategory(flowData.categoryCode);
   const editQ = questions.find(qq => qq.field === flowData.editingField);
   const value = parseAnswer(editQ, text, buttonId);
-  const editErr = value !== null && editQ.validate ? editQ.validate(value) : null;
 
-  if (value === null || editErr) {
+  if (value === null) {
     return {
-      messages: [{ ...buildQuestionMessage(editQ), body: editErr || `Sorry, I didn't catch that.\n\n${editQ.prompt}` }],
+      messages: [{ ...buildQuestionMessage(editQ), body: `Sorry, I didn't catch that.\n\n${editQ.prompt}` }],
       nextStep: 'APPLICATION_EDIT_CAPTURE',
       updatedData: {},
     };
