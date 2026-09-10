@@ -215,7 +215,10 @@ async function handleStep(step, { text, buttonId, media, flowData, customer }) {
     return applicationEngine.handleRepeatConfirm({ text, buttonId, flowData });
   }
 
-  // ── DOCUMENT_UPLOAD — same document collection engine the customer flow uses
+  // ── DOCUMENT_UPLOAD_INTRO / DOCUMENT_UPLOAD — shared document engine ─────
+  if (step === 'DOCUMENT_UPLOAD_INTRO') {
+    return documentUploadEngine.handleIntro({ text, buttonId, flowData });
+  }
   if (step === 'DOCUMENT_UPLOAD') {
     return documentUploadEngine.handleUpload({ text, buttonId, media, flowData });
   }

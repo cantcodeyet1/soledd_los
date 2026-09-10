@@ -260,13 +260,17 @@ async function createApplication(customerPhone, appData) {
     return null;
   }
 
+  let bySummary = 'Submitted via WhatsApp';
+  if (appData.agentPhone) {
+    const { data: ag } = await supabase.from('agents').select('name').eq('phone_number', appData.agentPhone).maybeSingle();
+    const who = ag && ag.name ? `${ag.name} (${appData.agentPhone})` : appData.agentPhone;
+    bySummary = `Submitted via WhatsApp by field agent ${who}`;
+  }
   await supabase.from('application_activity').insert([{
     application_id: inserted.id,
     type: 'CREATED',
-    summary: appData.agentPhone
-      ? `Submitted via WhatsApp by field agent ${appData.agentPhone}`
-      : 'Submitted via WhatsApp',
-    detail: { category: inserted.category, loan_amount: inserted.loan_amount },
+    summary: bySummary,
+    detail: { category: inserted.category, loan_amount: inserted.loan_amount, agent_phone: appData.agentPhone || null },
   }]).then(({ error: e }) => e && console.error('[FLOW] activity log:', e.message));
 
   console.log(`[FLOW] Application created: ${inserted.reference_number} (${inserted.category})`);

@@ -25,15 +25,22 @@ async function downloadDocument(d: Document, name: string) {
   downloadBlob(blob, name);
 }
 
-export default function DocsSection({ documents, loading, downloadName }: {
+export default function DocsSection({ documents, loading, downloadName, onDownloadZip }: {
   documents: Document[];
   loading: boolean;
   downloadName?: (d: Document) => string;
+  onDownloadZip?: () => Promise<void> | void;
 }) {
   const [lightboxDoc, setLightboxDoc] = useState<Document | null>(null);
+  const [zipping, setZipping] = useState(false);
   const nameFor = (d: Document) => downloadName?.(d) || filenameFromPath(d.storage_path);
 
   async function downloadAll() {
+    if (onDownloadZip) {
+      setZipping(true);
+      try { await onDownloadZip(); } finally { setZipping(false); }
+      return;
+    }
     for (const d of documents) {
       await downloadDocument(d, nameFor(d));
       await new Promise(r => setTimeout(r, 300)); // stagger so browsers don't block multiple downloads
@@ -45,7 +52,9 @@ export default function DocsSection({ documents, loading, downloadName }: {
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs uppercase tracking-wide text-text-dim font-semibold">Docs{documents.length > 0 ? ` (${documents.length})` : ''}</div>
         {documents.length > 1 && (
-          <button onClick={downloadAll} className="text-xs font-semibold text-accent-bright hover:underline">Download All</button>
+          <button onClick={downloadAll} disabled={zipping} className="text-xs font-semibold text-accent-bright hover:underline disabled:opacity-60">
+            {zipping ? 'Zipping…' : onDownloadZip ? 'Download All (.zip)' : 'Download All'}
+          </button>
         )}
       </div>
       {loading && (
