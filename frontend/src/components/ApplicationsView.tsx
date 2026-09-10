@@ -7,7 +7,7 @@ import {
 import CalculatorResult, { AmortisationTable, CalculatorResultSkeleton } from './CalculatorResult';
 import Dropdown from './Dropdown';
 import ViewToggle, { ViewMode } from './ViewToggle';
-import DocsSection from './DocsSection';
+import DocsSection, { docDownloadName } from './DocsSection';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -767,7 +767,11 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
           </div>
         )}
 
-        <DocsSection documents={documents} loading={docsLoading} />
+        <DocsSection
+          documents={documents}
+          loading={docsLoading}
+          downloadName={d => docDownloadName(d.label, application.full_name, d.storage_path)}
+        />
 
         <div className="flex gap-2 mb-4 flex-wrap">
           <button onClick={() => onRequestStatusChange('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>

@@ -7,22 +7,35 @@ export function filenameFromPath(path: string): string {
   return parts[parts.length - 1];
 }
 
+/** "Certified copy of ID - Nyasha Mpofu.jpg" */
+export function docDownloadName(label: string, owner: string, path: string): string {
+  const ext = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase() || '';
+  const clean = (s: string) => (s || '').replace(/[^\w .'-]/g, '').replace(/\s+/g, ' ').trim();
+  const base = [clean(label), clean(owner)].filter(Boolean).join(' - ') || 'document';
+  return ext ? `${base}.${ext}` : base;
+}
+
 function isImageDoc(d: Document): boolean {
   return (d.mime_type || '').startsWith('image/');
 }
 
-async function downloadDocument(d: Document) {
+async function downloadDocument(d: Document, name: string) {
   const res = await fetch(d.url);
   const blob = await res.blob();
-  downloadBlob(blob, filenameFromPath(d.storage_path));
+  downloadBlob(blob, name);
 }
 
-export default function DocsSection({ documents, loading }: { documents: Document[]; loading: boolean }) {
+export default function DocsSection({ documents, loading, downloadName }: {
+  documents: Document[];
+  loading: boolean;
+  downloadName?: (d: Document) => string;
+}) {
   const [lightboxDoc, setLightboxDoc] = useState<Document | null>(null);
+  const nameFor = (d: Document) => downloadName?.(d) || filenameFromPath(d.storage_path);
 
   async function downloadAll() {
     for (const d of documents) {
-      await downloadDocument(d);
+      await downloadDocument(d, nameFor(d));
       await new Promise(r => setTimeout(r, 300)); // stagger so browsers don't block multiple downloads
     }
   }
@@ -55,25 +68,25 @@ export default function DocsSection({ documents, loading }: { documents: Documen
                 <div className="text-[10px] uppercase tracking-wide text-text-dim">{d.label}</div>
                 <div className="truncate">{filenameFromPath(d.storage_path)}</div>
               </button>
-              <button onClick={() => downloadDocument(d)} className="text-xs text-accent-bright font-semibold shrink-0">Download</button>
+              <button onClick={() => downloadDocument(d, nameFor(d))} className="text-xs text-accent-bright font-semibold shrink-0">Download</button>
             </div>
           ))}
         </div>
       )}
 
-      {lightboxDoc && <DocumentLightbox document={lightboxDoc} onClose={() => setLightboxDoc(null)} />}
+      {lightboxDoc && <DocumentLightbox document={lightboxDoc} downloadName={nameFor(lightboxDoc)} onClose={() => setLightboxDoc(null)} />}
     </div>
   );
 }
 
-function DocumentLightbox({ document: doc, onClose }: { document: Document; onClose: () => void }) {
+function DocumentLightbox({ document: doc, downloadName, onClose }: { document: Document; downloadName: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-6 animate-overlayIn" onClick={onClose}>
       <div className="max-w-3xl max-h-[85vh] w-full flex flex-col items-center gap-3 animate-modalIn" onClick={e => e.stopPropagation()}>
         <img src={doc.url} alt={doc.label} className="max-w-full max-h-[70vh] rounded-lg object-contain bg-black/20" />
         <div className="flex items-center gap-3">
-          <span className="text-white/80 text-sm">{filenameFromPath(doc.storage_path)}</span>
-          <button onClick={() => downloadDocument(doc)} className="bg-white text-ink text-xs font-semibold px-3 py-1.5 rounded-full hover:opacity-90">Download</button>
+          <span className="text-white/80 text-sm">{downloadName}</span>
+          <button onClick={() => downloadDocument(doc, downloadName)} className="bg-white text-ink text-xs font-semibold px-3 py-1.5 rounded-full hover:opacity-90">Download</button>
           <button onClick={onClose} className="text-white/80 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-full border border-white/30">Close</button>
         </div>
       </div>

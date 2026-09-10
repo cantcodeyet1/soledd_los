@@ -97,8 +97,29 @@ async function verifyOtp(phoneNumber, code) {
 }
 
 async function setActive(agentId, active) {
-  const { error } = await supabase.from('agents').update({ active, updated_at: new Date().toISOString() }).eq('id', agentId);
+  const { data, error } = await supabase
+    .from('agents')
+    .update({ active, updated_at: new Date().toISOString() })
+    .eq('id', agentId)
+    .select()
+    .single();
   if (error) throw new Error(error.message);
+
+  // Deactivating an agent takes effect immediately: any client application
+  // they're mid-capture on is dropped, and they fall back to the normal
+  // customer menu on their next WhatsApp message (webhook.controller.js
+  // gates the agent flow on verified && active).
+  if (!active && data?.phone_number) {
+    await supabase
+      .from('conversation_states')
+      .update({ flow: null, step: null, flow_data: {}, updated_at: new Date().toISOString() })
+      .eq('customer_phone', data.phone_number)
+      .eq('flow', 'AGENT');
+    await whatsappService.sendMessage(
+      data.phone_number,
+      'Your Soledd field agent access has been paused. Any application in progress has been stopped. You can still use Soledd Loans as a normal customer.'
+    ).catch(() => {});
+  }
 }
 
 async function updateAgent(agentId, { phoneNumber, name, region }) {

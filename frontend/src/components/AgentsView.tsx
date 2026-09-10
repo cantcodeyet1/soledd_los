@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { requestJson, requestBlob, downloadBlob } from '../services/api';
 import { Agent, AgentApplication, Application, CATEGORY_LABELS, Document as DocType } from '../types';
 import ViewToggle, { ViewMode } from './ViewToggle';
-import DocsSection from './DocsSection';
+import DocsSection, { docDownloadName } from './DocsSection';
 
 function openWhatsApp(phone: string, message = '') {
   const clean = (phone || '').replace(/[^0-9]/g, '');
@@ -11,13 +11,20 @@ function openWhatsApp(phone: string, message = '') {
 }
 
 function WhatsAppChatButton({ phone, message, label = 'Open WhatsApp Chat' }: { phone: string; message?: string; label?: string }) {
+  const [opening, setOpening] = useState(false);
+  function open() {
+    setOpening(true);
+    openWhatsApp(phone, message);
+    setTimeout(() => setOpening(false), 1200);
+  }
   return (
     <button
-      onClick={() => openWhatsApp(phone, message)}
-      className="bg-[#25D366] hover:opacity-90 text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-opacity"
+      onClick={open}
+      disabled={opening}
+      className="bg-[#25D366] hover:opacity-90 text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-opacity disabled:opacity-70"
     >
       <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 0 0-6.9 12l-1 3.6 3.7-1A8 8 0 1 0 10 2Zm4.6 11.4c-.2.5-1.1 1-1.5 1-.4 0-.9.1-2.9-.8-2.4-1-4-3.4-4.1-3.6-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.7.8 1.8.1.2.1.3 0 .5-.1.2-.2.3-.3.5-.2.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1 .2-.3.4-.2.6-.1l1.6.8c.2.1.3.2.4.3.1.2.1.7-.1 1.2Z"/></svg>
-      {label}
+      {opening ? 'Opening…' : label}
     </button>
   );
 }
@@ -485,7 +492,18 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
   const [phoneDraft, setPhoneDraft] = useState(agent.phone_number);
   const [regionDraft, setRegionDraft] = useState(agent.region || '');
   const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState<null | 'toggle' | 'resend' | 'delete'>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
   const status = statusOf(agent);
+
+  async function run(kind: 'toggle' | 'resend' | 'delete', fn: () => void | Promise<void>) {
+    setBusy(kind);
+    try { await fn(); } finally { setBusy(null); }
+  }
+  async function togglePaid(l: Application) {
+    setPayingId(l.id);
+    try { await onSetCommissionPaid(l.id, !l.agent_commission_paid); } finally { setPayingId(null); }
+  }
 
   useEffect(() => {
     setLoans(null);
@@ -572,27 +590,40 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
           <WhatsAppChatButton phone={agent.phone_number} />
           <div className="flex gap-2 flex-wrap">
             {!agent.verified && (
-              <button onClick={onResendOtp} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                Resend Code
+              <button
+                onClick={() => run('resend', onResendOtp)}
+                disabled={busy !== null}
+                className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-60"
+              >
+                {busy === 'resend' ? 'Opening…' : 'Resend Code'}
               </button>
             )}
             {agent.verified && (
               <button
-                onClick={onToggleActive}
-                className={`text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity ${agent.active ? 'bg-accent-deep' : 'bg-sage'}`}
+                onClick={() => run('toggle', onToggleActive)}
+                disabled={busy !== null}
+                className={`text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-60 ${agent.active ? 'bg-accent-deep' : 'bg-sage'}`}
               >
-                {agent.active ? 'Deactivate Agent' : 'Activate Agent'}
+                {busy === 'toggle' ? 'Working…' : agent.active ? 'Deactivate Agent' : 'Activate Agent'}
               </button>
             )}
-            <button onClick={onDelete} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-accent hover:text-accent transition-colors">
-              Delete Agent
+            <button
+              onClick={() => run('delete', onDelete)}
+              disabled={busy !== null}
+              className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-accent hover:text-accent transition-colors disabled:opacity-60"
+            >
+              {busy === 'delete' ? 'Working…' : 'Delete Agent'}
             </button>
           </div>
         </div>
 
         <div className="mb-6">
           <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Application Documents</div>
-          <DocsSection documents={docs || []} loading={docs === null} />
+          <DocsSection
+            documents={docs || []}
+            loading={docs === null}
+            downloadName={d => docDownloadName(d.label, agent.name || agent.phone_number, d.storage_path)}
+          />
         </div>
 
         <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Loans Brought In</div>
@@ -622,12 +653,19 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
                       <td className="px-4 py-2.5">
                         {l.status === 'APPROVED' ? (
                           <button
-                            onClick={() => onSetCommissionPaid(l.id, !l.agent_commission_paid)}
-                            className={`text-[10.5px] font-bold uppercase px-2.5 py-1 rounded-full transition-colors ${
-                              l.agent_commission_paid ? 'bg-sage-bg text-sage hover:opacity-80' : 'bg-warn-bg text-warn hover:opacity-80'
+                            onClick={() => togglePaid(l)}
+                            disabled={payingId === l.id}
+                            aria-pressed={!!l.agent_commission_paid}
+                            className={`group inline-flex items-center gap-2 text-xs font-semibold whitespace-nowrap disabled:opacity-50 ${
+                              l.agent_commission_paid ? 'text-sage' : 'text-text-dim hover:text-ink'
                             }`}
                           >
-                            {l.agent_commission_paid ? 'Paid' : 'Mark paid'}
+                            <span className={`w-8 h-[18px] rounded-full p-[2px] flex transition-colors ${
+                              l.agent_commission_paid ? 'bg-sage justify-end' : 'bg-rule justify-start'
+                            }`}>
+                              <span className="w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform" />
+                            </span>
+                            {payingId === l.id ? 'Saving…' : l.agent_commission_paid ? 'Paid' : 'Mark paid'}
                           </button>
                         ) : <span className="text-text-dim text-xs">—</span>}
                       </td>
@@ -792,7 +830,11 @@ function AgentApplicationDetail({ application, onClose, onRequestDecision }: {
           <DetailField label="Submitted" value={new Date(application.created_at).toLocaleDateString('en-ZW', { timeZone: 'Africa/Harare' })} />
         </div>
 
-        <DocsSection documents={documents} loading={docsLoading} />
+        <DocsSection
+          documents={documents}
+          loading={docsLoading}
+          downloadName={d => docDownloadName(d.label, application.full_name, d.storage_path)}
+        />
 
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => onRequestDecision('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
