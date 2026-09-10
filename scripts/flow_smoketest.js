@@ -181,9 +181,18 @@ async function run() {
   console.log(await turn(AGENT_PHONE, { text: 'hi' }));
   console.log('   → verified?', JSON.stringify((await supabase.from('agents').select('verified, active').eq('phone_number', AGENT_PHONE).single()).data));
 
-  head('9b. Field agent — start a new loan for a client');
+  head('9b. Field agent starts a client loan, then gets deactivated mid-flow');
   console.log(await turn(AGENT_PHONE, { buttonId: 'AGENT_NEW_LOAN', text: 'Start new loan' }));
   console.log(await turn(AGENT_PHONE, { buttonId: 'CAT_SME', text: 'Small to Medium Enterprises' }));
+  console.log(await turn(AGENT_PHONE, { text: 'Mr Clientson' }));
+  // deactivate the agent while they are mid client-application
+  await supabase.from('agents').update({ active: false }).eq('phone_number', AGENT_PHONE);
+  console.log(await turn(AGENT_PHONE, { text: 'CBZ, 123' }));
+  console.log('   → state after deactivation (should be MAIN/MAIN_MENU):', JSON.stringify(await getState(AGENT_PHONE).then(s => ({ flow: s?.flow || null, step: s?.step || null }))));
+
+  head('10. Submit loan documents from the menu (customer who already applied)');
+  console.log(await turn(PHONE, { text: 'Hi' }));
+  console.log(await turn(PHONE, { buttonId: 'ACTION_SUBMIT_DOCS', text: 'Submit loan documents' }));
 
   console.log('\n\ncleaning up test data...');
   await cleanup();

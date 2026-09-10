@@ -14,6 +14,7 @@ payload.json:  { "answers": <extraDetails>, "application": {...clean DB
 
 import io
 import json
+import re
 import sys
 import textwrap
 
@@ -32,6 +33,71 @@ FONT_SIZE = 9
 
 def wrap_text(text, width_chars=95):
     return textwrap.wrap(str(text), width=width_chars) or [""]
+
+
+# ─── Splitting "all in one" answers into their parts ──────────────────────
+# The WhatsApp flow asks for e.g. phone + address in one message; the paper
+# form has a separate box for each. These parse the combined answer so each
+# piece lands in the right box.
+
+_PHONE_RE = re.compile(r"(?<![\d/])(?:\+?263|0)[\s\-]?\d(?:[\s\-]?\d){7,11}(?![\d/])")
+_ACCT_KEYWORD_RE = re.compile(r"(?:a\s*/\s*c|acc(?:ount|t)?|no\.?)\s*[:.#]?\s*([0-9][0-9\s\-]{3,})", re.I)
+_LONG_DIGITS_RE = re.compile(r"\b(\d{6,20})\b")
+_DOB_RE = re.compile(r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})\b")
+
+
+def _clean_num(s):
+    return re.sub(r"[^\d+]", "", s or "")
+
+
+def _tidy(s):
+    s = re.sub(r"\s+", " ", (s or "")).strip(" ,;:-\n\t")
+    s = re.sub(r"(?:,\s*){2,}", ", ", s)
+    return s.strip(" ,;:-")
+
+
+def split_contact(text):
+    """'0772 111 222, 5 Willow Close, Harare' -> (phone1, phone2, address)."""
+    text = str(text or "")
+    phones = [m.group(0) for m in _PHONE_RE.finditer(text)]
+    rest = text
+    for p in phones:
+        rest = rest.replace(p, " ", 1)
+    nums = [_clean_num(p) for p in phones]
+    p1 = nums[0] if nums else ""
+    p2 = nums[1] if len(nums) > 1 else ""
+    return p1, p2, _tidy(rest)
+
+
+def split_bank(text):
+    """'CBZ Bank, account 1234567890' -> (bank_name, account_number)."""
+    text = _tidy(text)
+    if not text:
+        return "", ""
+    m = _ACCT_KEYWORD_RE.search(text)
+    if not m:
+        m = _LONG_DIGITS_RE.search(text)
+        if m:
+            name = _tidy(text[: m.start()] + " " + text[m.end():])
+            return name, m.group(1)
+        return text, ""
+    acct = re.sub(r"[\s\-]", "", m.group(1))
+    name = _tidy(text[: m.start()])
+    # strip a trailing "branch ..." clause from the name if present
+    name = re.split(r"\bbranch\b", name, flags=re.I)[0]
+    return _tidy(name), acct
+
+
+def split_personal(text):
+    """'17/12/1994, 5 Rd Harare, 0782 000 111' -> (dob, address, phone)."""
+    text = str(text or "")
+    dob = ""
+    m = _DOB_RE.search(text)
+    if m:
+        dob = m.group(1)
+        text = text.replace(dob, " ", 1)
+    p1, _p2, addr = split_contact(text)
+    return dob, addr, p1
 
 
 class FormFiller:
@@ -68,6 +134,26 @@ class FormFiller:
         y0 = self.page_height - bbox["bottom"] - dy
         for i, line in enumerate(wrap_text(value, width_chars)[:max_lines]):
             self._add(page_index, x, y0 - i * 11, line)
+
+    def text_in_box(self, page_index, box, value, size=FONT_SIZE, x_pad=4, y_pad=5, max_lines=2, width_chars=None):
+        """Draws `value` inside an explicit box rect `(x0, x1, top, bot)`
+        (pdfplumber-style top/bot from the page top), top-aligned, wrapped."""
+        if value is None or str(value).strip() == "":
+            return
+        x0, x1, top, bot = box
+        avail = max(20, (x1 - x0) - 2 * x_pad)
+        if width_chars is None:
+            width_chars = max(6, int(avail / (size * 0.5)))
+        lines = wrap_text(value, width_chars)[:max_lines]
+        line_h = size + 2.5
+        y0 = self.page_height - top - size - y_pad
+        for i, line in enumerate(lines):
+            self._add(page_index, x0 + x_pad, y0 - i * line_h, line, size=size)
+
+    def mark_box(self, page_index, box, mark="X", size=10):
+        """Puts a mark roughly centred in an explicit box rect."""
+        x0, x1, top, bot = box
+        self._add(page_index, (x0 + x1) / 2 - size * 0.3, self.page_height - bot + (bot - top - size) / 2 + 1, mark, size=size)
 
     def text_in_box_below(self, page_index, label, value, occurrence=0, size=FONT_SIZE, x_pad=5, y_pad=5):
         """Places `value` inside the ruled box that sits directly below
@@ -285,44 +371,65 @@ def fill_government_schedule(f, page_index, application, computed):
     put("num_instalments", str(computed["tenorMonths"]))
 
 
+# government_agreement.pdf — every input box hand-measured from the template
+# (595 x 842). Each is (x0, x1, top, bot) in pdfplumber page-top coordinates.
+GOV_BOX = {
+    "first_names": (285, 560, 71, 93),
+    "id":          (47, 201, 107, 126),
+    "surname":     (285, 560, 108, 129),
+    "telephone":   (106, 197, 136, 151),
+    "mobile":      (285, 375, 137, 152),
+    "residential": (111, 560, 165, 202),
+    "next_of_kin": (114, 560, 216, 252),
+    "bank_name":   (317, 441, 299, 326),
+    "account_no":  (444, 560, 299, 326),
+    "purpose":     (121, 560, 437, 455),
+    "title_mr":    (46, 67, 83, 96),
+    "title_mrs":   (110, 131, 82, 95),
+    "title_other": (184, 206, 86, 99),
+}
+
+
 def fill_government(payload, output_path):
     answers = payload.get("answers", {})
     application = payload.get("application", {})
     computed = payload.get("computed")
     f = FormFiller(f"{FORMS_DIR}/government_agreement.pdf")
 
-    # nameLine holds the combined "Mrs Michelle Chinodya" answer — split it
-    # into the title tick-box, the First Names box, and the Surname box.
+    # Name: split into title tick + First Names + Surname boxes.
     title, first_names, surname = split_name(resolve_full_name(answers, application))
-    tick_title(f, 0, "First Names", title)
-    f.text_right(0, "First Names", first_names)
-    f.text_right(0, "Surname", surname, dx=8)
+    tbox = {"Mr.": "title_mr", "Mrs.": "title_mrs"}.get(title, "title_other" if title else None)
+    if tbox:
+        f.mark_box(0, GOV_BOX[tbox])
+    f.text_in_box(0, GOV_BOX["first_names"], first_names, size=10, max_lines=1)
+    f.text_in_box(0, GOV_BOX["surname"], surname, size=10, max_lines=1)
+    f.text_in_box(0, GOV_BOX["id"], resolve_national_id(answers, application), size=9, max_lines=1)
 
-    f.text_right(0, "ID", resolve_national_id(answers, application), dx=30)
+    # contactLine = "phone + residential address" — split it: phone(s) to the
+    # Telephone / Mobile boxes, the rest to Residential Address.
+    combined = _first_nonempty(answers, ["contactLine", "personalDetails"])
+    p1, p2, addr = split_contact(combined)
+    db_phone = application.get("applicantPhone", "")
+    f.text_in_box(0, GOV_BOX["telephone"], p1 or db_phone, size=9, max_lines=1)
+    f.text_in_box(0, GOV_BOX["mobile"], p2 or (db_phone if not p1 else ""), size=9, max_lines=1)
+    f.text_in_box(0, GOV_BOX["residential"], addr or resolve_contact(answers), size=9, max_lines=3)
 
-    # Placed by the input box's own rect, not text_right off the label — the
-    # label sits above a bordered box here rather than beside a fill line, so
-    # a label-relative offset either clips the box top or sits on its
-    # underline; the box coordinates themselves (hand-measured) are exact.
-    phone = application.get("applicantPhone", "")
-    if phone:
-        f.text_row(0, 109, 135.3, 152.1, phone, size=9)
-        f.text_row(0, 287, 136.2, 153.0, phone, size=9)
+    f.text_in_box(0, GOV_BOX["next_of_kin"], answers.get("nextOfKin", ""), size=9, max_lines=3)
 
-    # contactLine ("phone, address") goes into the larger Residential Address box.
-    f.text_below(0, "Residential Address", resolve_contact(answers), dy=14, width_chars=60)
-    f.text_below(0, "Name, Address and phone", answers.get("nextOfKin", ""), dy=10, width_chars=60)
+    # bankDetails = "bank name + account number" — split into the two cells.
+    bank_name, acct = split_bank(resolve_bank(answers))
+    f.text_in_box(0, GOV_BOX["bank_name"], bank_name, size=9, max_lines=2)
+    f.text_in_box(0, GOV_BOX["account_no"], acct, size=9, max_lines=1)
 
-    # bankDetails ("bank name, account number") goes into the Name of Bank box.
-    f.text_below(0, "Name of Bank", resolve_bank(answers), dy=30, width_chars=40)
-
-    src = answers.get("sourceOfIncome", "")
-    for opt in ["Monthly Salary", "Remittances from Diaspora", "Sale of Asset", "Other"]:
-        if opt.lower() in src.lower() or src.lower() in opt.lower():
-            f.mark_choice(0, "Please indicate source of income", opt, dx=40)
+    # The blank template already has "Monthly Salary" ticked, so only mark a
+    # box when the applicant chose something else.
+    src = (answers.get("sourceOfIncome", "") or "").lower()
+    for opt in ["Remittances from Diaspora", "Sale of Asset", "Other"]:
+        if opt.lower() in src or (src and src in opt.lower()):
+            f.text_right(0, opt, "X", dx=16, dy=-1)
             break
 
-    f.text_below(0, "State Purpose of Loan", answers.get("purposeOfLoan", ""), dy=14, width_chars=60)
+    f.text_in_box(0, GOV_BOX["purpose"], answers.get("purposeOfLoan", ""), size=9, max_lines=1)
 
     fill_government_schedule(f, 0, application, computed)
 
@@ -386,8 +493,22 @@ def fill_private_sector(payload, output_path):
     f.text_right(0, "First Names", first_names)
     f.text_right(0, "Surname", surname, dx=8)
     f.text_right(0, "ID / Passport No.", resolve_national_id(answers, application))
-    f.text_below(0, "Physical Address", answers.get("personalDetails") or resolve_contact(answers), dy=14, occurrence=0, width_chars=60)
-    f.text_right(0, "Full names", answers.get("nextOfKin", ""), dx=10)
+
+    # personalDetails = "date of birth + physical address + contact number" —
+    # the form has a separate field for each.
+    dob, addr, contact = split_personal(answers.get("personalDetails", ""))
+    if dob:
+        f.text_right(0, "D.O.B", dob, dx=8)
+    f.text_below(0, "Physical Address", addr or answers.get("personalDetails") or resolve_contact(answers), dy=14, occurrence=0, width_chars=60)
+    f.text_below(0, "Contact Details", contact or application.get("applicantPhone", ""), dy=13, width_chars=50)
+
+    # nextOfKin = "full name, address, phone, relationship" — name on the
+    # Full names line, the rest into the next-of-kin Physical Address line.
+    nok = answers.get("nextOfKin", "")
+    nok_name, _sep, nok_rest = nok.partition(",")
+    f.text_right(0, "Full names", (nok_name.strip() or nok), dx=8)
+    if nok_rest.strip():
+        f.text_below(0, "Physical Address", nok_rest.strip(), dy=13, occurrence=1, width_chars=60)
 
     f.text_right(0, "Marital", answers.get("maritalStatus", ""), dx=40)
     spouse = answers.get("spouseDetails")

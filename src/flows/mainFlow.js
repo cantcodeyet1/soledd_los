@@ -12,6 +12,7 @@
 
 'use strict';
 
+const { supabase } = require('../models/supabase');
 const applicationEngine = require('./applicationEngine');
 const documentUploadEngine = require('./documentUploadEngine');
 
@@ -44,6 +45,7 @@ function mainMenuMessage() {
       {
         title: 'Other',
         rows: [
+          { id: 'ACTION_SUBMIT_DOCS',  title: 'Submit loan documents', description: 'Send docs for an application you already started' },
           { id: 'ACTION_SPEAK_AGENT',  title: 'Speak to an Agent', description: 'Talk to a Soledd representative' },
           { id: 'ACTION_BECOME_AGENT', title: 'Become an Agent',   description: 'Apply to become a Soledd agent' },
         ],
@@ -61,6 +63,55 @@ function finalWithReturn(bodyText) {
 }
 
 // ─── Parsing helpers ──────────────────────────────────────────────────────
+
+/**
+ * "Submit loan documents" — resume the document phase for the applicant's
+ * most recent application that hasn't had documents sent yet. Requires them
+ * to have already completed the questions for an application.
+ */
+async function startDocumentResume(phone) {
+  const { data: apps } = await supabase
+    .from('applications')
+    .select('id, reference_number, category, created_at')
+    .eq('applicant_phone', phone)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  let target = null;
+  for (const a of apps || []) {
+    const { count } = await supabase
+      .from('documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('application_id', a.id);
+    if (!count) { target = a; break; }
+  }
+
+  if (!target) {
+    return {
+      messages: [finalWithReturn(
+        (apps && apps.length)
+          ? "We've already received documents for your applications. If you need to send more, please contact our office."
+          : "I can't find an application from you that's waiting for documents. Start an application from the menu first, then come back here to send your documents."
+      )],
+      endFlow: true,
+    };
+  }
+
+  const docStart = documentUploadEngine.start(target.category);
+  return {
+    messages: [
+      { type: 'text', body: `Let's finish the documents for ${target.reference_number}.` },
+      ...docStart.messages,
+    ],
+    nextStep: docStart.nextStep,
+    updatedData: {
+      ...(docStart.updatedData || {}),
+      applicationId: target.id,
+      referenceNumber: target.reference_number,
+      categoryCode: target.category,
+    },
+  };
+}
 
 function matchCategoryByKeyword(text) {
   const t = (text || '').toLowerCase();
@@ -116,6 +167,10 @@ async function handleStep(step, { text, buttonId, media, flowData, customer }) {
         nextStep: 'AGENT_NAME_CAPTURE',
         updatedData: {},
       };
+    }
+
+    if (buttonId === 'ACTION_SUBMIT_DOCS' || /submit.*doc|upload.*doc|send.*doc/i.test(text || '')) {
+      return startDocumentResume(customer.phone_number);
     }
 
     return {
@@ -212,4 +267,4 @@ async function handleStep(step, { text, buttonId, media, flowData, customer }) {
   return handleStep('WELCOME', { text, buttonId: null, flowData: {}, customer });
 }
 
-module.exports = { ENTRY_STEP, handleStep, CATEGORIES };
+module.exports = { ENTRY_STEP, handleStep, CATEGORIES, mainMenuMessage };

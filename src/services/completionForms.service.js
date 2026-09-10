@@ -43,15 +43,17 @@ async function buildCompletionForms(application) {
   };
 
   const ref = application.reference_number || 'application';
+  const who = (application.full_name || '').replace(/[^\w .'-]/g, '').replace(/\s+/g, ' ').trim();
+  const stem = [ref, who].filter(Boolean).join(' ');
   const forms = [];
 
   const agreement = await pdfFormFill.fillFormPdf(application.category, payload).catch(() => null);
-  if (agreement) forms.push({ key: 'agreement', filename: `${ref} Loan Agreement.pdf`, buffer: agreement });
+  if (agreement) forms.push({ key: 'agreement', filename: `${stem} Loan Agreement.pdf`, buffer: agreement });
 
   const ded = DEDUCTION_FORM_BY_CATEGORY[application.category];
   if (ded) {
     const dedBuf = await pdfFormFill.fillDeductionForm(ded.kind, payload).catch(() => null);
-    if (dedBuf) forms.push({ key: 'deduction', filename: `${ref} ${ded.label}.pdf`, buffer: dedBuf });
+    if (dedBuf) forms.push({ key: 'deduction', filename: `${stem} ${ded.label}.pdf`, buffer: dedBuf });
   }
 
   return forms;

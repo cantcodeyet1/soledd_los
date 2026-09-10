@@ -18,6 +18,12 @@
 
 'use strict';
 
+/** "Please send these in one message:\n\n* Item one\n* Item two"
+ *  (WhatsApp renders a line starting with "* " as a bullet). */
+function bulletPrompt(intro, items) {
+  return `${intro}\n\n${items.map(i => `* ${i}`).join('\n')}`;
+}
+
 const GOV_SME_PERIODS = [
   { months: 3,  label: '3 months' },
   { months: 6,  label: '6 months' },
@@ -35,14 +41,14 @@ function governmentQuestions(employerQuestion) {
   const qs = [
     { field: 'nameLine',           prompt: 'What is your title, first name(s), and surname? (e.g. Mr Tinashe Moyo)', type: 'text' },
     { field: 'nationalId',         prompt: 'What is your National ID number?', type: 'text' },
-    { field: 'contactLine',        prompt: 'What is your telephone/mobile number and residential address? (all in one message)', type: 'text' },
-    { field: 'nextOfKin',          prompt: "Please provide your Next of Kin's full name, address, and phone number (all in one message).", type: 'text' },
+    { field: 'contactLine',        prompt: bulletPrompt('Please send these in one message:', ['Telephone / mobile number', 'Residential address']), type: 'text' },
+    { field: 'nextOfKin',          prompt: bulletPrompt("Your next of kin's details, in one message:", ['Full name', 'Address', 'Phone number']), type: 'text' },
   ];
   if (employerQuestion) {
     qs.push({ field: 'employerName', prompt: employerQuestion, type: 'text' });
   }
   qs.push(
-    { field: 'bankDetails',    prompt: 'What is your bank name and account number?', type: 'text' },
+    { field: 'bankDetails',    prompt: bulletPrompt('Your bank details, in one message:', ['Bank name', 'Account number']), type: 'text' },
     { field: 'sourceOfIncome', prompt: 'What is your source of income to meet the repayment?', type: 'choice', options: ['Monthly Salary', 'Remittances from Diaspora', 'Sale of Asset', 'Other'] },
     { field: 'purposeOfLoan',  prompt: 'What is the purpose of this loan?', type: 'text' },
     { field: 'loanAmount',     prompt: 'How much would you like to borrow, in USD?', type: 'amount' },
@@ -58,15 +64,15 @@ const SME_QUESTIONS = [
   { field: 'nameLine',         prompt: 'What is your title and first name(s)? (e.g. Mr Chipo)', type: 'text' },
   { field: 'surname',          prompt: 'What is your surname or registered company name?', type: 'text' },
   { field: 'nationalId',       prompt: 'What is your ID number (or company registration number)?', type: 'text' },
-  { field: 'address',          prompt: 'What is your residential address and business address?', type: 'text' },
+  { field: 'address',          prompt: bulletPrompt('Please send these in one message:', ['Residential address', 'Business address']), type: 'text' },
   { field: 'repaymentSource',  prompt: "If repayment is from business income, tell us your business address/location. If from employment, tell us your employer's name. You'll be able to send a payslip and bank statement as a document later.", type: 'text' },
-  { field: 'nextOfKin',        prompt: "Please provide the Next of Kin (or Company Director)'s full name, address, and phone number.", type: 'text' },
+  { field: 'nextOfKin',        prompt: bulletPrompt("Next of Kin (or Company Director) details, in one message:", ['Full name', 'Address', 'Phone number']), type: 'text' },
   { field: 'qualifications',   prompt: 'What are your qualifications, skills, and experience?', type: 'text' },
   { field: 'natureOfBusiness', prompt: 'What is the nature of your business?', type: 'text' },
   { field: 'yearsInIndustry',  prompt: 'How long have you (or the company) been in this industry?', type: 'text' },
   { field: 'securityPledged',  prompt: 'What security are you pledging to secure this loan?', type: 'text' },
   { field: 'blacklisted',      prompt: 'Have you or the business ever been blacklisted or failed to pay your debts?', type: 'yesno' },
-  { field: 'bankDetails',      prompt: 'What is your bank name, branch, and account number? (all in one message)', type: 'text' },
+  { field: 'bankDetails',      prompt: bulletPrompt('Your bank details, in one message:', ['Bank name', 'Branch', 'Account number']), type: 'text' },
   { field: 'purposeOfLoan',    prompt: 'What is the purpose of this loan?', type: 'text' },
   { field: 'transactionHistory', prompt: 'How many times have you successfully done a similar transaction? Please provide details.', type: 'text' },
   { field: 'loanAmount',       prompt: 'How much would you like to borrow, in USD?', type: 'amount' },
@@ -76,8 +82,8 @@ const SME_QUESTIONS = [
 const PRIVATE_SECTOR_QUESTIONS = [
   { field: 'nameLine',        prompt: 'What is your title, first name(s), and surname? (e.g. Mr Tapiwa Ncube)', type: 'text' },
   { field: 'nationalId',      prompt: 'What is your ID/Passport number?', type: 'text' },
-  { field: 'personalDetails', prompt: 'What is your date of birth, physical address, and contact number? (all in one message)', type: 'text' },
-  { field: 'nextOfKin',       prompt: "Please provide your Next of Kin's full name, address, phone number, and relationship to you (all in one message).", type: 'text' },
+  { field: 'personalDetails', prompt: bulletPrompt('Please send these in one message:', ['Date of birth', 'Physical address', 'Contact number']), type: 'text' },
+  { field: 'nextOfKin',       prompt: bulletPrompt("Your next of kin's details, in one message:", ['Full name', 'Address', 'Phone number', 'Relationship to you']), type: 'text' },
   { field: 'maritalStatus',   prompt: 'What is your marital status?', type: 'text' },
   {
     field: 'spouseDetails',
@@ -86,7 +92,7 @@ const PRIVATE_SECTOR_QUESTIONS = [
     skipIf: a => !/marri/i.test(a.maritalStatus || ''),
   },
   { field: 'childrenDetails', prompt: 'Do you have children? If so, how many, which school(s) do they attend, and what are the total school fees? (reply N/A if none)', type: 'text' },
-  { field: 'monthlyBudget',   prompt: 'Please share your monthly budget: total income, total living expenses, and mortgage/rent (if any), all in one message.', type: 'text' },
+  { field: 'monthlyBudget',   prompt: bulletPrompt('Your monthly budget, in one message:', ['Total income', 'Total living expenses', 'Mortgage / rent (if any)']), type: 'text' },
   { field: 'loanAmount',      prompt: 'How much would you like to borrow, in USD?', type: 'amount' },
   { field: 'repaymentMonths', prompt: 'Choose a repayment period.', type: 'period', options: PRIVATE_SECTOR_PERIODS },
   { field: 'purposeOfLoan',   prompt: 'What is the purpose of this loan?', type: 'choice', options: ['Working Capital', 'Asset finance', 'Inputs finance', 'Solar Asset finance', 'Other'] },

@@ -33,6 +33,27 @@ async function dispatch(customerPhone, { text, buttonId, media, customer, state,
     const step = state?.step || null;
     const flowData = state?.flow_data || {};
 
+    // The sender was a field agent mid-flow, but is no longer a
+    // verified+active agent (deactivated while applying on a client's
+    // behalf). Stop the agent flow, tell them, and drop them to the
+    // customer menu.
+    if (flow === 'AGENT' && !isAgent) {
+      await whatsappService.sendMessage(
+        customerPhone,
+        'Sorry, your Soledd field agent access has been deactivated. '
+        + 'Any client application you were working on has been stopped. '
+        + 'You can continue as yourself using the menu below, or contact the office for support.'
+      );
+      await supabase.from('conversations').insert([{
+        customer_phone: customerPhone, message_text: '[agent deactivated notice]',
+        direction: 'outbound', timestamp: new Date().toISOString(), sent_by: 'bot',
+      }]);
+      await clearFlowState(customerPhone);
+      await sendMessages(customerPhone, [mainFlow.mainMenuMessage()]);
+      await setFlowState(customerPhone, 'MAIN', 'MAIN_MENU', {});
+      return;
+    }
+
     let targetFlow = flow || detectStartFlow(isAgent);
     let handler = FLOW_HANDLERS[targetFlow];
     if (!handler) {
@@ -171,8 +192,9 @@ async function sendMessages(customerPhone, messages) {
 /**
  * Generates the loan agreement + relevant deduction ("stop order") form for
  * a freshly created application, uploads them, and sends them to the
- * applicant on WhatsApp with a "download, print, sign, scan, send back"
- * instruction. Best-effort — a failure here never blocks the flow.
+ * applicant on WhatsApp. The instruction text (print, sign, send back +
+ * document checklist) is part of the completion message already sent, so
+ * this just delivers the files. Best-effort: a failure never blocks the flow.
  */
 async function sendCompletionForms(customerPhone, application) {
   let forms;
@@ -189,7 +211,7 @@ async function sendCompletionForms(customerPhone, application) {
       const link = await documentStorage.storeGeneratedFile(application.id, f.filename, f.buffer);
       await whatsappService.sendDocument(
         customerPhone, link, f.filename,
-        `${application.reference_number} — download, print, sign, then send it back here.`
+        `${application.reference_number}: print, sign, then send this back here.`
       );
       await supabase.from('conversations').insert([{
         customer_phone: customerPhone,
@@ -203,17 +225,13 @@ async function sendCompletionForms(customerPhone, application) {
     }
   }
 
-  const list = forms.map(f => `• ${f.filename.replace(/\.pdf$/i, '')}`).join('\n');
   await whatsappService.sendMessage(
     customerPhone,
-    `I've sent you ${forms.length === 1 ? 'a form' : `${forms.length} forms`} to complete:\n\n${list}\n\n`
-    + `Please *download, print, sign, and scan* each one, then send the signed copies back here as a photo or file. `
-    + `Then send the other documents I ask for below — that completes your application.\n\n`
-    + `_The amounts and dates shown are provisional and may be adjusted when a credit officer finalises your loan._`
+    'The amounts and dates on these forms are provisional and may change when a credit officer finalises your loan.'
   );
   await supabase.from('conversations').insert([{
     customer_phone: customerPhone,
-    message_text: '[sent forms instructions]',
+    message_text: '[sent forms note]',
     direction: 'outbound',
     timestamp: new Date().toISOString(),
     sent_by: 'bot',

@@ -249,7 +249,7 @@ function activationMessage(fullName, code, botNumber) {
   const first = (fullName || '').split(' ')[0] || 'there';
   const where = botNumber ? ` on WhatsApp at ${botNumber}` : ' to the Soledd Loans WhatsApp bot';
   return `Congratulations ${first}! Your Soledd field agent application has been approved.\n\n`
-    + `To activate your field agent account, send this code${where} — just the code, nothing else:\n\n`
+    + `To activate your field agent account, send this code${where}. Just the code, nothing else:\n\n`
     + `${code}\n\n`
     + `The code is valid for ${ACTIVATION_CODE_TTL_HOURS} hours.`;
 }

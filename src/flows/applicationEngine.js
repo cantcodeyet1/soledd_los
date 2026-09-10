@@ -11,6 +11,7 @@ const { supabase } = require('../models/supabase');
 const { questionsForCategory } = require('./applicationQuestions');
 const { verificationPromiseText } = require('../utils/businessHours');
 const documentUploadEngine = require('./documentUploadEngine');
+const { REQUIRED_DOCUMENTS } = require('./requiredDocuments');
 
 const RETURN_BUTTON = { id: 'RETURN_MENU', title: '🔙 Main Menu' };
 const EDIT_BUTTON = { id: 'EDIT_ANSWER', title: '✏️ Edit answer' };
@@ -49,6 +50,15 @@ function nextQuestionIndex(questions, answers, fromIndex) {
   return -1;
 }
 
+/** "(3/16) " — position of question `idx` among the questions that actually
+ *  apply given the answers so far (skipped ones don't count). */
+function progressLabel(questions, answers, idx) {
+  const active = questions.filter(q => !q.skipIf || !q.skipIf(answers || {}));
+  const pos = active.indexOf(questions[idx]) + 1;
+  if (pos < 1 || active.length === 0) return '';
+  return `(${pos}/${active.length}) `;
+}
+
 /**
  * Looks up the applicant's most recent prior application, if any. When a
  * field agent is applying on the client's behalf, customerPhone is the
@@ -72,11 +82,12 @@ async function findPriorApplication(customerPhone, nationalId) {
  * for Edit); list-type questions add both as extra rows; free-text/amount
  * questions get Edit + Menu buttons.
  */
-function buildQuestionMessage(q, canEdit = false) {
+function buildQuestionMessage(q, canEdit = false, progress = '') {
+  const body = `${progress}${q.prompt}`;
   if (q.type === 'yesno') {
     return {
       type: 'interactive',
-      body: q.prompt,
+      body,
       buttons: [{ id: 'YES', title: 'Yes' }, { id: 'NO', title: 'No' }, RETURN_BUTTON],
     };
   }
@@ -84,7 +95,7 @@ function buildQuestionMessage(q, canEdit = false) {
   if (q.type === 'choice') {
     return {
       type: 'list',
-      body: q.prompt,
+      body,
       buttonLabel: 'Choose',
       sections: [{
         title: 'Options',
@@ -100,7 +111,7 @@ function buildQuestionMessage(q, canEdit = false) {
   if (q.type === 'period') {
     return {
       type: 'list',
-      body: q.prompt,
+      body,
       buttonLabel: 'Choose Period',
       sections: [{
         title: 'Repayment Period',
@@ -116,7 +127,7 @@ function buildQuestionMessage(q, canEdit = false) {
   // text / amount
   return {
     type: 'interactive',
-    body: q.prompt,
+    body,
     buttons: canEdit ? [EDIT_BUTTON, RETURN_BUTTON] : [RETURN_BUTTON],
   };
 }
@@ -224,7 +235,7 @@ function startApplication(categoryCode, agentPhone = null) {
   const q = questions[idx];
 
   return {
-    messages: [buildQuestionMessage(q)],
+    messages: [buildQuestionMessage(q, false, progressLabel(questions, answers, idx))],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { qIndex: idx, answers, agentPhone },
   };
@@ -250,8 +261,9 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
   const value = parseAnswer(q, text, buttonId);
 
   if (value === null) {
+    const prog = progressLabel(questions, flowData.answers, flowData.qIndex);
     return {
-      messages: [{ ...buildQuestionMessage(q, hasPrior), body: `Sorry, I didn't catch that.\n\n${q.prompt}` }],
+      messages: [{ ...buildQuestionMessage(q, hasPrior), body: `${prog}Sorry, I didn't catch that.\n\n${q.prompt}` }],
       nextStep: 'APPLICATION_CAPTURE',
       updatedData: {},
     };
@@ -298,7 +310,7 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
 
   const nextQ = questions[nextIdx];
   return {
-    messages: [buildQuestionMessage(nextQ, true)],
+    messages: [buildQuestionMessage(nextQ, true, progressLabel(questions, answers, nextIdx))],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { answers, qIndex: nextIdx },
   };
@@ -307,9 +319,19 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
 /** Application/agent data + document-upload handoff once all questions are answered. */
 function buildCompletionResult(flowData, answers) {
   const docStart = documentUploadEngine.start(flowData.categoryCode);
+  const docs = REQUIRED_DOCUMENTS[flowData.categoryCode] || [];
+  const checklist = docs.length ? `\n\n${docs.map(d => `* ${d}`).join('\n')}` : '';
+
+  // One consolidated message: reference, credit-officer note, and the full
+  // list of documents to send back. flow.service then sends the PDFs, then
+  // the document-collection prompts start.
+  const summary = `Got it. Your reference number is {{REFERENCE}}.\n\n`
+    + `${verificationPromiseText()}\n\n`
+    + `I'm about to send you your loan forms. Please print and sign them, then send the signed copies back here as photos or files, along with:${checklist}`;
+
   return {
     messages: [
-      { type: 'text', body: `Got it. Your reference number is {{REFERENCE}}. ${verificationPromiseText()}` },
+      { type: 'text', body: summary },
       ...docStart.messages,
     ],
     nextStep: docStart.nextStep,
@@ -347,7 +369,7 @@ function handleRepeatConfirm({ buttonId, text, flowData }) {
 
   const nextQ = questions[nextIdx];
   return {
-    messages: [buildQuestionMessage(nextQ, true)],
+    messages: [buildQuestionMessage(nextQ, true, progressLabel(questions, answers, nextIdx))],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { answers, qIndex: nextIdx },
   };
@@ -362,7 +384,7 @@ function handleEditSelect({ text, flowData }) {
   if (/^cancel$/i.test(t)) {
     const resumeQ = questions[flowData.editReturnIndex];
     return {
-      messages: [buildQuestionMessage(resumeQ, true)],
+      messages: [buildQuestionMessage(resumeQ, true, progressLabel(questions, flowData.answers, flowData.editReturnIndex))],
       nextStep: 'APPLICATION_CAPTURE',
       updatedData: { qIndex: flowData.editReturnIndex },
     };
@@ -406,7 +428,7 @@ function handleEditCapture({ text, buttonId, flowData }) {
   return {
     messages: [
       { type: 'text', body: '✅ Updated.' },
-      buildQuestionMessage(resumeQ, true),
+      buildQuestionMessage(resumeQ, true, progressLabel(questions, answers, flowData.editReturnIndex)),
     ],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { answers, qIndex: flowData.editReturnIndex },
