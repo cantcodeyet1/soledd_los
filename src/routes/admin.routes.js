@@ -272,6 +272,29 @@ router.patch('/applications/:id/details', async (req, res) => {
   }
 });
 
+// Mark (or un-mark) an approved loan's field-agent commission as paid.
+router.patch('/applications/:id/agent-commission', async (req, res) => {
+  try {
+    const paid = req.body.paid !== false;
+    const { data: application, error } = await supabase
+      .from('applications')
+      .update({
+        agent_commission_paid: paid,
+        agent_commission_paid_at: paid ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error || !application) return res.status(404).json({ error: error?.message || 'Not found' });
+    await logActivity(req.params.id, 'NOTE', paid ? 'Field agent commission marked paid' : 'Field agent commission marked unpaid', {}, req);
+    res.json({ application });
+  } catch (err) {
+    console.error('PATCH /applications/:id/agent-commission error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/applications/:id/activity', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -636,9 +659,40 @@ router.post('/agents', async (req, res) => {
 
 router.post('/agents/:id/resend-otp', async (req, res) => {
   try {
-    const agent = await agentService.resendOtp(req.params.id);
-    res.json({ agent });
+    const { agent, activationCode } = await agentService.resendOtp(req.params.id);
+    const botNumber = await whatsappService.getBotNumber();
+    res.json({
+      agent,
+      activationCode,
+      activationMessage: agentService.activationMessage(agent.name, activationCode, botNumber),
+      applicantPhone: agent.phone_number,
+    });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Documents an agent submitted with their "Become an Agent" application —
+// these live on the agent_applications row, so they'd otherwise vanish from
+// the UI once the application is approved. Matched by phone number.
+router.get('/agents/:phone/documents', async (req, res) => {
+  try {
+    const { data: apps } = await supabase
+      .from('agent_applications')
+      .select('id')
+      .eq('applicant_phone', req.params.phone)
+      .order('created_at', { ascending: false });
+
+    const docs = [];
+    for (const app of apps || []) {
+      const appDocs = await documentStorage.listAgentApplicationDocuments(app.id);
+      for (const d of appDocs) {
+        docs.push({ ...d, url: await documentStorage.getSignedUrl(d.storage_path) });
+      }
+    }
+    res.json({ documents: docs });
+  } catch (err) {
+    console.error('GET /agents/:phone/documents error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

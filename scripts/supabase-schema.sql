@@ -264,3 +264,8 @@ insert into settings (key, value) values
     "voucherPrefix": "PEN USD"
   }'::jsonb)
 on conflict (key) do nothing;
+
+-- Field-agent commission is treated like a bill: each approved loan's
+-- commission is a line item that can be marked paid.
+alter table applications add column if not exists agent_commission_paid boolean not null default false;
+alter table applications add column if not exists agent_commission_paid_at timestamptz;

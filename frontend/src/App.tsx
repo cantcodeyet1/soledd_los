@@ -147,7 +147,7 @@ export default function App() {
         )}
         {view === 'chats' && <ConversationsView onOpenApplication={openApplication} />}
         {view === 'calculator' && <CalculatorView />}
-        {view === 'agents' && <AgentsView />}
+        {view === 'agents' && <AgentsView onOpenApplication={openApplication} />}
         {view === 'profile' && (
           <ProfileView
             user={user}

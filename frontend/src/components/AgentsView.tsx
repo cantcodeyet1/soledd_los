@@ -48,7 +48,7 @@ const STATUS_CHIPS: { id: string; label: string }[] = [
   { id: 'DEACTIVATED', label: 'Deactivated' },
 ];
 
-export default function AgentsView() {
+export default function AgentsView({ onOpenApplication }: { onOpenApplication?: (id: string) => void } = {}) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -116,8 +116,20 @@ export default function AgentsView() {
   }
 
   async function resendOtp(id: string) {
-    await requestJson(`/agents/${id}/resend-otp`, { method: 'POST' });
-    alert('New code sent.');
+    const r = await requestJson(`/agents/${id}/resend-otp`, { method: 'POST' });
+    await load();
+    // Open a WhatsApp chat pre-filled with the new code so the officer hands
+    // it over; the agent then sends that code to the bot to activate.
+    if (r?.activationMessage) openWhatsApp(r.applicantPhone, r.activationMessage);
+  }
+
+  async function setCommissionPaid(applicationId: string, paid: boolean) {
+    try {
+      await requestJson(`/applications/${applicationId}/agent-commission`, { method: 'PATCH', body: JSON.stringify({ paid }) });
+      await load();
+    } catch (e: any) {
+      alert(e.message?.includes('agent_commission_paid') ? 'Run the pending database migration to enable commission tracking.' : (e.message || 'Could not update.'));
+    }
   }
 
   async function toggleActive(agent: Agent) {
@@ -341,6 +353,8 @@ export default function AgentsView() {
           onDelete={() => remove(selected.id)}
           onResendOtp={() => resendOtp(selected.id)}
           onSaveDetails={updates => updateAgentDetails(selected.id, updates)}
+          onOpenApplication={onOpenApplication}
+          onSetCommissionPaid={setCommissionPaid}
         />
       )}
 
@@ -454,15 +468,18 @@ function AgentsSkeleton({ mode }: { mode: ViewMode }) {
   );
 }
 
-function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, onSaveDetails }: {
+function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, onSaveDetails, onOpenApplication, onSetCommissionPaid }: {
   agent: Agent;
   onClose: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
   onResendOtp: () => void;
   onSaveDetails: (updates: { phoneNumber?: string; name?: string; region?: string }) => Promise<void>;
+  onOpenApplication?: (id: string) => void;
+  onSetCommissionPaid: (applicationId: string, paid: boolean) => Promise<void>;
 }) {
   const [loans, setLoans] = useState<Application[] | null>(null);
+  const [docs, setDocs] = useState<DocType[] | null>(null);
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState(agent.name || '');
   const [phoneDraft, setPhoneDraft] = useState(agent.phone_number);
@@ -472,11 +489,18 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
 
   useEffect(() => {
     setLoans(null);
+    setDocs(null);
     requestJson(`/applications?agent_phone=${encodeURIComponent(agent.phone_number)}`).then(r => setLoans(r.applications));
+    requestJson(`/agents/${encodeURIComponent(agent.phone_number)}/documents`).then(r => setDocs(r.documents)).catch(() => setDocs([]));
     setNameDraft(agent.name || '');
     setPhoneDraft(agent.phone_number);
     setRegionDraft(agent.region || '');
   }, [agent.id, agent.phone_number]);
+
+  const p = agent.performance;
+  const accrued = p.accruedRemuneration ?? p.totalRemuneration;
+  const paid = p.paidRemuneration ?? 0;
+  const outstanding = p.outstandingRemuneration ?? accrued;
 
   async function saveDetails(e: React.FormEvent) {
     e.preventDefault();
@@ -533,31 +557,42 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
           </form>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <MiniCard label="Total Loans" value={String(agent.performance.total)} />
-          <MiniCard label="Pending" value={String(agent.performance.pending)} />
-          <MiniCard label="Approved" value={String(agent.performance.approved)} />
-          <MiniCard label="Remuneration" value={`$${agent.performance.totalRemuneration.toFixed(2)}`} />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <MiniCard label="Total Loans" value={String(p.total)} />
+          <MiniCard label="Approved" value={String(p.approved)} />
+          <MiniCard label="Paid" value={`$${paid.toFixed(2)}`} />
+          <MiniCard label="Outstanding" value={`$${outstanding.toFixed(2)}`} />
+        </div>
+        <div className="text-xs text-text-dim mb-6">
+          Total commission accrued: <span className="font-semibold text-ink">${accrued.toFixed(2)}</span>
+          {' '}· mark each approved loan's commission paid in the table below.
         </div>
 
-        <div className="flex gap-2 mb-6 flex-wrap">
+        <div className="flex items-center justify-between gap-2 mb-6 flex-wrap">
           <WhatsAppChatButton phone={agent.phone_number} />
-          {!agent.verified && (
-            <button onClick={onResendOtp} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-              Resend Code
+          <div className="flex gap-2 flex-wrap">
+            {!agent.verified && (
+              <button onClick={onResendOtp} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                Resend Code
+              </button>
+            )}
+            {agent.verified && (
+              <button
+                onClick={onToggleActive}
+                className={`text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity ${agent.active ? 'bg-accent-deep' : 'bg-sage'}`}
+              >
+                {agent.active ? 'Deactivate Agent' : 'Activate Agent'}
+              </button>
+            )}
+            <button onClick={onDelete} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-accent hover:text-accent transition-colors">
+              Delete Agent
             </button>
-          )}
-          {agent.verified && (
-            <button
-              onClick={onToggleActive}
-              className={`text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity ${agent.active ? 'bg-accent-deep' : 'bg-sage'}`}
-            >
-              {agent.active ? 'Deactivate Agent' : 'Activate Agent'}
-            </button>
-          )}
-          <button onClick={onDelete} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-accent hover:text-accent transition-colors">
-            Delete Agent
-          </button>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Application Documents</div>
+          <DocsSection documents={docs || []} loading={docs === null} />
         </div>
 
         <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Loans Brought In</div>
@@ -570,11 +605,11 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
         {loans && loans.length > 0 && (
           <div className="border border-rule rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[480px]">
+              <table className="w-full text-sm min-w-[620px]">
                 <thead>
                   <tr className="text-left text-[10.5px] uppercase tracking-wide text-text-dim border-b border-rule bg-paper">
-                    <th className="px-4 py-2.5">Reference</th><th className="px-4 py-2.5">Client</th><th className="px-4 py-2.5">Category</th>
-                    <th className="px-4 py-2.5">Amount</th><th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5">Reference</th><th className="px-4 py-2.5">Client</th><th className="px-4 py-2.5">Amount</th>
+                    <th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Commission</th><th className="px-4 py-2.5"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -582,9 +617,23 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
                     <tr key={l.id} className="border-b border-rule last:border-0">
                       <td className="px-4 py-2.5 font-mono-brand text-text-dim">{l.reference_number}</td>
                       <td className="px-4 py-2.5 font-semibold">{l.full_name}</td>
-                      <td className="px-4 py-2.5">{CATEGORY_LABELS[l.category]}</td>
                       <td className="px-4 py-2.5 font-mono-brand">${Number(l.loan_amount).toFixed(2)}</td>
                       <td className="px-4 py-2.5">{l.status.replace('_', ' ')}</td>
+                      <td className="px-4 py-2.5">
+                        {l.status === 'APPROVED' ? (
+                          <button
+                            onClick={() => onSetCommissionPaid(l.id, !l.agent_commission_paid)}
+                            className={`text-[10.5px] font-bold uppercase px-2.5 py-1 rounded-full transition-colors ${
+                              l.agent_commission_paid ? 'bg-sage-bg text-sage hover:opacity-80' : 'bg-warn-bg text-warn hover:opacity-80'
+                            }`}
+                          >
+                            {l.agent_commission_paid ? 'Paid' : 'Mark paid'}
+                          </button>
+                        ) : <span className="text-text-dim text-xs">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button onClick={() => onOpenApplication?.(l.id)} className="text-xs font-semibold text-accent-bright hover:underline">Open</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

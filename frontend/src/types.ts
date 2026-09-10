@@ -26,6 +26,7 @@ export interface Application {
   disbursement_date: string | null;
   archived: boolean;
   lms_loan_number: string | null;
+  agent_commission_paid?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -67,6 +68,9 @@ export interface Agent {
     rejected: number;
     approvalRate: number;
     totalRemuneration: number;
+    accruedRemuneration?: number;
+    paidRemuneration?: number;
+    outstandingRemuneration?: number;
   };
 }
 

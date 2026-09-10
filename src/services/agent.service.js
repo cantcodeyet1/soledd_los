@@ -56,23 +56,20 @@ async function addAgent({ phoneNumber, name, region }) {
 
 async function resendOtp(agentId) {
   const otp = generateOtp();
-  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60000).toISOString();
+  const expiresAt = new Date(Date.now() + ACTIVATION_CODE_TTL_HOURS * 3600 * 1000).toISOString();
 
   const { data, error } = await supabase
     .from('agents')
-    .update({ otp_code: otp, otp_expires_at: expiresAt, updated_at: new Date().toISOString() })
+    .update({ otp_code: otp, otp_expires_at: expiresAt, verified: false, updated_at: new Date().toISOString() })
     .eq('id', agentId)
     .select()
     .single();
 
   if (error) throw new Error(error.message);
 
-  await whatsappService.sendMessage(
-    data.phone_number,
-    `Your new Soledd Loans agent verification code is *${otp}*. It expires in ${OTP_TTL_MINUTES} minutes.`
-  );
-
-  return data;
+  // No bot send — the dashboard opens a WhatsApp chat so the officer hands
+  // over the new code, and the agent sends it to the bot to activate.
+  return { agent: data, activationCode: otp };
 }
 
 async function findByPhone(phoneNumber) {
@@ -133,18 +130,26 @@ async function setCommissionRatePct(pct) {
 }
 
 async function agentPerformance(phoneNumber) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('applications')
-    .select('status, loan_amount')
+    .select('status, loan_amount, agent_commission_paid')
     .eq('agent_phone', phoneNumber);
+  // Tolerate the agent_commission_paid column not existing yet.
+  if (error && /agent_commission_paid/.test(error.message || '')) {
+    ({ data, error } = await supabase.from('applications').select('status, loan_amount').eq('agent_phone', phoneNumber));
+  }
   if (error) throw new Error(error.message);
 
   const commissionRate = (await getCommissionRatePct()) / 100;
+  const round2 = n => Math.round(n * 100) / 100;
   const total = data.length;
   const approved = data.filter(a => a.status === 'APPROVED');
   const pending = data.filter(a => a.status === 'IN_REVIEW').length;
   const rejected = data.filter(a => a.status === 'REJECTED').length;
-  const totalRemuneration = approved.reduce((sum, a) => sum + Number(a.loan_amount) * commissionRate, 0);
+  const commissionOf = a => Number(a.loan_amount) * commissionRate;
+
+  const accrued = approved.reduce((s, a) => s + commissionOf(a), 0);
+  const paid = approved.filter(a => a.agent_commission_paid).reduce((s, a) => s + commissionOf(a), 0);
 
   return {
     total,
@@ -152,7 +157,11 @@ async function agentPerformance(phoneNumber) {
     pending,
     rejected,
     approvalRate: total ? Math.round((approved.length / total) * 100) : 0,
-    totalRemuneration: Math.round(totalRemuneration * 100) / 100,
+    // totalRemuneration kept as the accrued total for backwards compatibility.
+    totalRemuneration: round2(accrued),
+    accruedRemuneration: round2(accrued),
+    paidRemuneration: round2(paid),
+    outstandingRemuneration: round2(accrued - paid),
   };
 }
 
