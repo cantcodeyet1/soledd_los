@@ -42,6 +42,16 @@ const STEPS: { title: string; body: string; icon: JSX.Element }[] = [
     ),
   },
   {
+    title: 'Follow every conversation',
+    body: "The Chats page is your WhatsApp inbox for clients. Filter by abandoned or waiting-on-documents, open a thread to read the full exchange, and tap the header for a profile panel with their details and linked loans.",
+    icon: (
+      <>
+        <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h11A1.5 1.5 0 0 1 17 5.5v7A1.5 1.5 0 0 1 15.5 14H8l-4 3v-3H4.5A1.5 1.5 0 0 1 3 12.5Z" />
+        <path d="M7 8h6M7 10.5h4" />
+      </>
+    ),
+  },
+  {
     title: 'Your account, your settings',
     body: 'Update your name and password from Profile. Administrators can also manage calculator rates and credit officer accounts from that same page.',
     icon: (

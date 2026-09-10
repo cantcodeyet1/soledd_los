@@ -21,22 +21,52 @@ const officerAuth = require('../services/officerAuth.service');
 const emailService = require('../services/email.service');
 const { getEffectivePassword, requireAdmin } = require('../middleware/auth');
 
+// ─── Activity timeline ──────────────────────────────────────────────────────
+// Best-effort audit log. Never throw from here — a failed log line must not
+// break the action it was recording.
+async function logActivity(applicationId, type, summary, detail, req) {
+  try {
+    await supabase.from('application_activity').insert([{
+      application_id: applicationId,
+      type,
+      summary,
+      detail: detail || {},
+      actor_name: req?.user?.name || null,
+      actor_email: req?.user?.email || null,
+    }]);
+  } catch (err) {
+    console.error('[ACTIVITY] log failed:', err.message);
+  }
+}
+
 // ─── Applications ───────────────────────────────────────────────────────────
 
 router.get('/applications', async (req, res) => {
   try {
-    const { category, status, search, agent_phone, applicant_phone } = req.query;
-    let query = supabase.from('applications').select('*').order('created_at', { ascending: false });
+    const { category, status, search, agent_phone, applicant_phone, archived } = req.query;
 
-    if (category) query = query.eq('category', category);
-    if (status) query = query.eq('status', status);
-    if (agent_phone) query = query.eq('agent_phone', agent_phone);
-    if (applicant_phone) query = query.eq('applicant_phone', applicant_phone);
-    if (search) {
-      query = query.or(`full_name.ilike.%${search}%,reference_number.ilike.%${search}%,national_id.ilike.%${search}%`);
+    function baseQuery(withArchived) {
+      let q = supabase.from('applications').select('*').order('created_at', { ascending: false });
+      // Default view hides archived; ?archived=true shows only archived,
+      // ?archived=all shows everything.
+      if (withArchived) {
+        if (archived === 'true') q = q.eq('archived', true);
+        else if (archived !== 'all') q = q.eq('archived', false);
+      }
+      if (category) q = q.eq('category', category);
+      if (status) q = q.eq('status', status);
+      if (agent_phone) q = q.eq('agent_phone', agent_phone);
+      if (applicant_phone) q = q.eq('applicant_phone', applicant_phone);
+      if (search) q = q.or(`full_name.ilike.%${search}%,reference_number.ilike.%${search}%,national_id.ilike.%${search}%`);
+      return q;
     }
 
-    const { data, error } = await query;
+    let { data, error } = await baseQuery(true);
+    // Tolerate the `archived` column not existing yet (migration not run).
+    if (error && /archived/.test(error.message || '')) {
+      console.warn('[applications] archived column missing — run the pending migration');
+      ({ data, error } = await baseQuery(false));
+    }
     if (error) throw error;
     res.json({ applications: data });
   } catch (err) {
@@ -97,9 +127,26 @@ router.get('/applications/:id/documents', async (req, res) => {
   }
 });
 
+/** The applicant-facing message for a decision — also handed back to the
+ *  dashboard so it can open a pre-filled WhatsApp chat for the officer to
+ *  send (see ?notify below). */
+function decisionMessage(application, status, note) {
+  const firstName = (application.full_name || '').split(' ')[0] || 'there';
+  if (status === 'APPROVED') {
+    return `Good news, ${firstName}! Your application ${application.reference_number} ($${Number(application.loan_amount).toFixed(2)}) has been *Approved*. Funds will be disbursed to your registered account shortly.${note ? `\n\n${note}` : ''}`;
+  }
+  if (status === 'REJECTED') {
+    return `Hello ${firstName}, after review we are not able to approve application ${application.reference_number} at this time.${note ? `\n\nReason: ${note}` : ''} You are welcome to reapply in future.`;
+  }
+  return null;
+}
+
 router.patch('/applications/:id/status', async (req, res) => {
   try {
     const { status, note } = req.body;
+    // ?notify=send  → bot sends the applicant message itself (old behaviour)
+    // default       → dashboard opens a pre-filled WhatsApp chat instead
+    const notify = req.query.notify === 'send';
     if (!['APPROVED', 'REJECTED', 'IN_REVIEW'].includes(status)) {
       return res.status(400).json({ error: 'status must be APPROVED, REJECTED, or IN_REVIEW' });
     }
@@ -113,18 +160,15 @@ router.patch('/applications/:id/status', async (req, res) => {
 
     if (error || !application) return res.status(404).json({ error: 'Not found' });
 
-    let message = null;
-    if (status === 'APPROVED') {
-      message = `Good news, ${application.full_name.split(' ')[0]}! Your application ${application.reference_number} ($${Number(application.loan_amount).toFixed(2)}) has been *Approved*. Funds will be disbursed to your registered account shortly.${note ? `\n\n${note}` : ''}`;
-    } else if (status === 'REJECTED') {
-      message = `Hello ${application.full_name.split(' ')[0]}, after review we are not able to approve application ${application.reference_number} at this time.${note ? ` ${note}` : ''} You are welcome to reapply in future.`;
-    }
-
-    if (message) {
+    const message = decisionMessage(application, status, note);
+    if (message && notify) {
       await whatsappService.sendMessage(application.applicant_phone, message);
     }
 
-    res.json({ application });
+    const label = status === 'APPROVED' ? 'Approved' : status === 'REJECTED' ? 'Rejected' : 'Moved back to In Review';
+    await logActivity(req.params.id, 'STATUS_CHANGED', `${label}${note ? ` — ${note}` : ''}`, { status, note: note || null }, req);
+
+    res.json({ application, notificationMessage: message, notified: !!(message && notify) });
   } catch (err) {
     console.error('PATCH /applications/:id/status error:', err.message);
     res.status(500).json({ error: err.message });
@@ -142,6 +186,11 @@ router.patch('/applications/:id/agent', async (req, res) => {
       .single();
 
     if (error || !application) return res.status(404).json({ error: 'Not found' });
+    await logActivity(
+      req.params.id, 'AGENT_ASSIGNED',
+      agent_phone ? `Field agent assigned (${agent_phone})` : 'Field agent removed',
+      { agent_phone: agent_phone || null }, req,
+    );
     res.json({ application });
   } catch (err) {
     console.error('PATCH /applications/:id/agent error:', err.message);
@@ -160,9 +209,116 @@ router.patch('/applications/:id/loan-terms', async (req, res) => {
       .single();
 
     if (error || !application) return res.status(404).json({ error: 'Not found' });
+    await logActivity(
+      req.params.id, 'LOAN_TERMS_UPDATED', 'Loan terms updated',
+      { loan_product, borrower_type, disbursement_date }, req,
+    );
     res.json({ application });
   } catch (err) {
     console.error('PATCH /applications/:id/loan-terms error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Edit core application details from the dashboard (task: top-right "Edit"
+// button). extra_details is merged, not replaced, so untouched keys survive.
+const EDITABLE_COLUMNS = ['full_name', 'national_id', 'employer_name', 'loan_amount', 'repayment_months', 'lms_loan_number', 'applicant_phone'];
+
+router.patch('/applications/:id/details', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const updates = { updated_at: new Date().toISOString() };
+    for (const col of EDITABLE_COLUMNS) {
+      if (body[col] !== undefined) updates[col] = body[col];
+    }
+    if (updates.loan_amount !== undefined) updates.loan_amount = Number(updates.loan_amount);
+    if (updates.repayment_months !== undefined) updates.repayment_months = Number(updates.repayment_months);
+
+    // A changed WhatsApp number must exist in customers first (FK).
+    if (updates.applicant_phone) {
+      await supabase.from('customers').upsert(
+        { phone_number: updates.applicant_phone, updated_at: new Date().toISOString() },
+        { onConflict: 'phone_number' },
+      );
+    }
+
+    const { data: current } = await supabase.from('applications').select('extra_details').eq('id', req.params.id).single();
+    if (body.extra_details && typeof body.extra_details === 'object') {
+      updates.extra_details = { ...(current?.extra_details || {}), ...body.extra_details };
+    }
+
+    // Retry-drop any column the DB doesn't have yet (e.g. lms_loan_number
+    // before the migration is run) so the rest of the edit still lands.
+    let application, error;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      ({ data: application, error } = await supabase
+        .from('applications').update(updates).eq('id', req.params.id).select().single());
+      if (!error) break;
+      const m = /column ['"]?(\w+)['"]? of 'applications'|Could not find the '(\w+)' column/.exec(error.message || '');
+      const missing = m && (m[1] || m[2]);
+      if (missing && missing in updates) { delete updates[missing]; continue; }
+      break;
+    }
+
+    if (error || !application) return res.status(404).json({ error: error?.message || 'Not found' });
+
+    const changed = Object.keys(updates).filter(k => k !== 'updated_at');
+    await logActivity(req.params.id, 'DETAILS_EDITED', `Edited: ${changed.join(', ')}`, { fields: changed }, req);
+
+    res.json({ application });
+  } catch (err) {
+    console.error('PATCH /applications/:id/details error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/applications/:id/activity', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('application_activity')
+      .select('*')
+      .eq('application_id', req.params.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ activity: data });
+  } catch (err) {
+    console.error('GET /applications/:id/activity error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/applications/:id/archive', async (req, res) => {
+  try {
+    const archived = req.body.archived !== false;
+    const { data: application, error } = await supabase
+      .from('applications')
+      .update({ archived, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error || !application) return res.status(404).json({ error: 'Not found' });
+    await logActivity(req.params.id, archived ? 'ARCHIVED' : 'UNARCHIVED', archived ? 'Archived' : 'Restored from archive', {}, req);
+    res.json({ application });
+  } catch (err) {
+    console.error('PATCH /applications/:id/archive error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/applications/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Remove stored document files + rows, then activity, then the application.
+    const docs = await documentStorage.listDocuments(id).catch(() => []);
+    for (const d of docs) {
+      await documentStorage.deleteDocument(d.id, d.storage_path).catch(err => console.error('[DELETE] doc cleanup:', err.message));
+    }
+    await supabase.from('application_activity').delete().eq('application_id', id);
+    const { error } = await supabase.from('applications').delete().eq('id', id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /applications/:id error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -179,6 +335,8 @@ router.post('/applications/:id/request-info', async (req, res) => {
       application.applicant_phone,
       `Hello ${application.full_name.split(' ')[0]}. Regarding your application ${application.reference_number}: ${message.trim()}`
     );
+
+    await logActivity(req.params.id, 'INFO_REQUESTED', `More info requested — ${message.trim()}`, {}, req);
 
     res.json({ ok: true });
   } catch (err) {
@@ -212,13 +370,28 @@ router.get('/applications/:id/pdf', async (req, res) => {
     if (!buffer) buffer = await pdfExport.buildApplicationPdf(application, computed);
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${application.reference_number || 'application'}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${pdfFileName(application)}"`);
     res.send(buffer);
   } catch (err) {
     console.error('GET /applications/:id/pdf error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
+
+const CATEGORY_EXPORT_LABELS = {
+  SSB: 'Civil Servants',
+  GOVT_PENSIONER: 'Government Pensioners',
+  SME: 'SME',
+  PRIVATE_SECTOR: 'Private Sector',
+};
+
+/** "LOS-0103 Michelle Chinodya (Private Sector).pdf" — name + type + LOS no. */
+function pdfFileName(application) {
+  const ref = application.reference_number || 'application';
+  const name = (application.full_name || '').replace(/[^\w .'-]/g, '').trim();
+  const type = CATEGORY_EXPORT_LABELS[application.category] || application.category || '';
+  return `${[ref, name].filter(Boolean).join(' ')}${type ? ` (${type})` : ''}.pdf`;
+}
 
 router.get('/applications/export/crystal', async (req, res) => {
   try {
@@ -229,12 +402,53 @@ router.get('/applications/export/crystal', async (req, res) => {
     const { data, error } = await query;
     if (error) throw error;
 
-    const buffer = await crystalExport.buildCrystalExport(data);
+    const buffer = await crystalExport.buildCrystalExport((data || []).filter(a => !a.archived));
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="soledd_loans_export_${new Date().toISOString().slice(0, 10)}.xlsx"`);
     res.send(buffer);
   } catch (err) {
     console.error('GET /applications/export/crystal error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── LMS monthly repayment-postings export ─────────────────────────────────
+// Produces the two-sheet workbook the client imports into their LMS ("Loan
+// Performer"): Sheet1 is the postings batch (one row per approved loan, the
+// amount to deduct this month, dated to month-end), Sheet2 is a name/amount/
+// loan-number reconciliation list. Matches the client's
+// "PEN <...> POSTINGS.xlsx" sample. See crystalExport.buildLmsPostingsExport
+// for the column contract and the assumptions it documents.
+router.get('/applications/export/lms-postings', async (req, res) => {
+  try {
+    // month=YYYY-MM (defaults to the current month)
+    const monthParam = (req.query.month || '').match(/^(\d{4})-(\d{2})$/);
+    const now = new Date();
+    const year = monthParam ? Number(monthParam[1]) : now.getFullYear();
+    const month0 = monthParam ? Number(monthParam[2]) - 1 : now.getMonth();
+
+    const cfg = (await settingsService.getSetting('lms_postings_config')) || {};
+
+    const { data: applications, error } = await supabase
+      .from('applications')
+      .select('*')
+      .eq('status', 'APPROVED')
+      .order('reference_number', { ascending: true });
+    if (error) throw error;
+
+    const rows = [];
+    for (const app of (applications || []).filter(a => !a.archived)) {
+      const computed = await loanCalculator.computeForApplication(app).catch(() => null);
+      rows.push({ application: app, computed });
+    }
+
+    const buffer = await crystalExport.buildLmsPostingsExport(rows, { year, month0, config: cfg });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const stamp = `${year}-${String(month0 + 1).padStart(2, '0')}`;
+    res.setHeader('Content-Disposition', `attachment; filename="soledd_lms_postings_${stamp}.xlsx"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('GET /applications/export/lms-postings error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -312,6 +526,34 @@ router.get('/conversations/:phone/messages', async (req, res) => {
     res.json({ messages: data, customer: customer || null });
   } catch (err) {
     console.error('GET /conversations/:phone/messages error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── LMS postings export config ─────────────────────────────────────────────
+
+const LMS_POSTINGS_DEFAULTS = { glAccount: '127010', savProdId: 'S00', mode: 1, voucherPrefix: 'PEN USD' };
+
+router.get('/settings/lms-postings', requireAdmin, async (req, res) => {
+  try {
+    const stored = await settingsService.getSetting('lms_postings_config');
+    res.json({ ...LMS_POSTINGS_DEFAULTS, ...(stored || {}) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/settings/lms-postings', requireAdmin, async (req, res) => {
+  try {
+    const { glAccount, savProdId, mode, voucherPrefix } = req.body || {};
+    await settingsService.setSetting('lms_postings_config', {
+      glAccount: String(glAccount ?? LMS_POSTINGS_DEFAULTS.glAccount),
+      savProdId: String(savProdId ?? LMS_POSTINGS_DEFAULTS.savProdId),
+      mode: Number(mode ?? LMS_POSTINGS_DEFAULTS.mode),
+      voucherPrefix: String(voucherPrefix ?? LMS_POSTINGS_DEFAULTS.voucherPrefix),
+    });
+    res.json({ ok: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -491,7 +733,16 @@ router.patch('/agent-applications/:id/status', async (req, res) => {
     }
     const application = await agentService.decideAgentApplication(req.params.id, status, note);
     if (!application) return res.status(404).json({ error: 'Not found' });
-    res.json({ application });
+
+    // On approval, hand the dashboard the activation code + a ready-to-send
+    // WhatsApp message so it can open a chat with the new agent.
+    const activationCode = application.activationCode || null;
+    res.json({
+      application,
+      activationCode,
+      activationMessage: activationCode ? agentService.activationMessage(application.full_name, activationCode) : null,
+      applicantPhone: application.applicant_phone,
+    });
   } catch (err) {
     console.error('PATCH /agent-applications/:id/status error:', err.message);
     res.status(500).json({ error: err.message });

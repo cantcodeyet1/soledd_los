@@ -224,3 +224,43 @@ alter table documents add constraint documents_one_parent_check check (
   (application_id is not null and agent_application_id is null) or
   (application_id is null and agent_application_id is not null)
 );
+
+-- ─── Application activity timeline + archive + LMS export ──────────────────
+-- One row per meaningful thing that happens to an application. actor_name/
+-- actor_email come from the authenticated dashboard request; rows written by
+-- the WhatsApp bot (e.g. CREATED) leave them null.
+create table if not exists application_activity (
+  id              uuid primary key default gen_random_uuid(),
+  application_id  uuid not null references applications(id) on delete cascade,
+  type            text not null,   -- CREATED | STATUS_CHANGED | LOAN_TERMS_UPDATED | AGENT_ASSIGNED | DETAILS_EDITED | INFO_REQUESTED | ARCHIVED | UNARCHIVED | EXPORTED | NOTE
+  summary         text not null,
+  detail          jsonb not null default '{}'::jsonb,
+  actor_name      text,
+  actor_email     text,
+  created_at      timestamptz not null default now()
+);
+create index if not exists idx_application_activity_app on application_activity(application_id, created_at desc);
+
+-- Archive keeps an application on record but out of the active queue.
+alter table applications add column if not exists archived boolean not null default false;
+create index if not exists idx_applications_archived on applications(archived);
+
+-- Loan-terms edits from the dashboard can now set any positive tenor, not
+-- just the four the WhatsApp menu offers.
+alter table applications drop constraint if exists applications_repayment_months_check;
+alter table applications add constraint applications_repayment_months_check check (repayment_months > 0);
+
+-- Optional per-loan LMS ("Loan Performer") account number, filled in on the
+-- dashboard once the loan is booked in the LMS. The monthly repayment
+-- postings export falls back to the LOS reference when this is blank.
+alter table applications add column if not exists lms_loan_number text;
+
+-- Defaults for the LMS monthly repayment-postings export (Profile → LMS Export).
+insert into settings (key, value) values
+  ('lms_postings_config', '{
+    "glAccount": "127010",
+    "savProdId": "S00",
+    "mode": 1,
+    "voucherPrefix": "PEN USD"
+  }'::jsonb)
+on conflict (key) do nothing;

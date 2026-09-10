@@ -4,6 +4,24 @@ import { Agent, AgentApplication, Application, CATEGORY_LABELS, Document as DocT
 import ViewToggle, { ViewMode } from './ViewToggle';
 import DocsSection from './DocsSection';
 
+function openWhatsApp(phone: string, message = '') {
+  const clean = (phone || '').replace(/[^0-9]/g, '');
+  const text = message.trim() ? `?text=${encodeURIComponent(message.trim())}` : '';
+  window.open(`https://wa.me/${clean}${text}`, '_blank', 'noopener');
+}
+
+function WhatsAppChatButton({ phone, message, label = 'Open WhatsApp Chat' }: { phone: string; message?: string; label?: string }) {
+  return (
+    <button
+      onClick={() => openWhatsApp(phone, message)}
+      className="bg-[#25D366] hover:opacity-90 text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-opacity"
+    >
+      <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 0 0-6.9 12l-1 3.6 3.7-1A8 8 0 1 0 10 2Zm4.6 11.4c-.2.5-1.1 1-1.5 1-.4 0-.9.1-2.9-.8-2.4-1-4-3.4-4.1-3.6-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.7.8 1.8.1.2.1.3 0 .5-.1.2-.2.3-.3.5-.2.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1 .2-.3.4-.2.6-.1l1.6.8c.2.1.3.2.4.3.1.2.1.7-.1 1.2Z"/></svg>
+      {label}
+    </button>
+  );
+}
+
 type AgentStatus = 'PENDING' | 'ACTIVE' | 'DEACTIVATED';
 
 function statusOf(a: Agent): AgentStatus {
@@ -259,7 +277,10 @@ export default function AgentsView() {
                 </div>
                 <div className="flex justify-between items-center text-xs" onClick={e => e.stopPropagation()}>
                   <span className="text-text-dim">${a.performance.totalRemuneration.toFixed(2)} remuneration</span>
-                  {status === 'PENDING' && <button onClick={() => resendOtp(a.id)} className="text-accent-bright font-semibold">Resend Code</button>}
+                  <span className="flex gap-3">
+                    {status === 'PENDING' && <button onClick={() => resendOtp(a.id)} className="text-accent-bright font-semibold">Resend Code</button>}
+                    <button onClick={() => openWhatsApp(a.phone_number)} className="text-sage font-semibold">Chat</button>
+                  </span>
                 </div>
               </button>
             );
@@ -295,7 +316,8 @@ export default function AgentsView() {
                       <td className="px-5 py-3.5 font-mono-brand">{a.performance.approvalRate}%</td>
                       <td className="px-5 py-3.5 font-mono-brand font-semibold">${a.performance.totalRemuneration.toFixed(2)}</td>
                       <td className="px-5 py-3.5">
-                        <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                        <div className="flex gap-2.5" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => openWhatsApp(a.phone_number)} className="text-xs text-sage font-semibold">Chat</button>
                           {!a.verified && <button onClick={() => resendOtp(a.id)} className="text-xs text-accent-bright font-semibold">Resend Code</button>}
                           {a.verified && <button onClick={() => toggleActive(a)} className="text-xs text-ink font-semibold">{a.active ? 'Deactivate' : 'Activate'}</button>}
                           <button onClick={() => remove(a.id)} className="text-xs text-accent font-semibold">Delete</button>
@@ -519,6 +541,7 @@ function AgentDetail({ agent, onClose, onToggleActive, onDelete, onResendOtp, on
         </div>
 
         <div className="flex gap-2 mb-6 flex-wrap">
+          <WhatsAppChatButton phone={agent.phone_number} />
           {!agent.verified && (
             <button onClick={onResendOtp} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
               Resend Code
@@ -603,10 +626,15 @@ function AgentApplicationsSection() {
   useEffect(() => { load(); }, []);
 
   async function decide(id: string, status: 'APPROVED' | 'REJECTED', note?: string) {
-    await requestJson(`/agent-applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note }) });
+    const r = await requestJson(`/agent-applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note }) });
     setPendingAction(null);
     setSelected(null);
     await load();
+    // On approval the agent is PENDING with a 6-digit activation code — open
+    // a WhatsApp chat pre-filled with it so the officer can hand it over.
+    if (status === 'APPROVED' && r?.activationMessage) {
+      openWhatsApp(r.applicantPhone, r.activationMessage);
+    }
   }
 
   if (!loading && applications.length === 0) return null;
@@ -640,6 +668,9 @@ function AgentApplicationsSection() {
                     <td className="px-5 py-3.5">{a.area}</td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openWhatsApp(a.applicant_phone)} title="Open WhatsApp chat" className="w-7 h-7 rounded-full border border-rule flex items-center justify-center text-text-dim hover:border-sage hover:text-sage transition-colors">
+                          <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 0 0-6.9 12l-1 3.6 3.7-1A8 8 0 1 0 10 2Zm4.6 11.4c-.2.5-1.1 1-1.5 1-.4 0-.9.1-2.9-.8-2.4-1-4-3.4-4.1-3.6-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.7.8 1.8.1.2.1.3 0 .5-.1.2-.2.3-.3.5-.2.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1 .2-.3.4-.2.6-.1l1.6.8c.2.1.3.2.4.3.1.2.1.7-.1 1.2Z"/></svg>
+                        </button>
                         <button onClick={() => setPendingAction({ app: a, mode: 'approve' })} title="Approve" className="w-7 h-7 rounded-full border border-rule flex items-center justify-center text-text-dim hover:border-sage hover:text-sage transition-colors">
                           <CheckIcon />
                         </button>
@@ -714,9 +745,10 @@ function AgentApplicationDetail({ application, onClose, onRequestDecision }: {
 
         <DocsSection documents={documents} loading={docsLoading} />
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={() => onRequestDecision('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
           <button onClick={() => onRequestDecision('reject')} className="bg-accent-deep text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Reject</button>
+          <WhatsAppChatButton phone={application.applicant_phone} />
         </div>
       </div>
     </div>
@@ -763,7 +795,10 @@ function AgentApplicationConfirmModal({ application, mode, onCancel, onConfirm }
         </div>
 
         {isApprove && (
-          <div className="text-sm text-text-dim mb-5">This creates a verified, active field agent using the applicant's WhatsApp number, name, and area.</div>
+          <div className="text-sm text-text-dim mb-5">
+            This registers the applicant as a pending field agent and generates a 6-digit activation code.
+            A WhatsApp chat opens pre-filled with the code — the agent replies with it to activate their account.
+          </div>
         )}
 
         {!isApprove && (

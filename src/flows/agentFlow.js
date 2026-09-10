@@ -95,7 +95,9 @@ function formatLoanDetail(a) {
 
 async function handleStep(step, { text, buttonId, media, flowData, customer }) {
 
-  if (buttonId === AGENT_MENU_BUTTON.id) {
+  // The shared application/document engines emit a "🔙 Main Menu" button
+  // with id RETURN_MENU; in the agent flow that means "back to the agent menu".
+  if (buttonId === AGENT_MENU_BUTTON.id || buttonId === 'RETURN_MENU') {
     return handleStep('AGENT_WELCOME', { text, buttonId: null, flowData: {}, customer });
   }
 

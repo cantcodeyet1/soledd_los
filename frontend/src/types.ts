@@ -24,8 +24,25 @@ export interface Application {
   loan_product: LoanProduct | null;
   borrower_type: BorrowerType | null;
   disbursement_date: string | null;
+  archived: boolean;
+  lms_loan_number: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type ActivityType =
+  | 'CREATED' | 'STATUS_CHANGED' | 'LOAN_TERMS_UPDATED' | 'AGENT_ASSIGNED'
+  | 'DETAILS_EDITED' | 'INFO_REQUESTED' | 'ARCHIVED' | 'UNARCHIVED' | 'EXPORTED' | 'NOTE';
+
+export interface ActivityEntry {
+  id: string;
+  application_id: string;
+  type: ActivityType;
+  summary: string;
+  detail: Record<string, any>;
+  actor_name: string | null;
+  actor_email: string | null;
+  created_at: string;
 }
 
 export interface Stats {

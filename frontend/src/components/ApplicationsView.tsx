@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { requestJson, requestBlob, downloadBlob } from '../services/api';
 import {
-  Application, Stats, CATEGORY_LABELS, CategoryCode, ApplicationStatus, Document, Agent,
+  Application, Stats, CATEGORY_LABELS, CategoryCode, ApplicationStatus, Document, Agent, ActivityEntry,
   LoanProduct, BorrowerType, RepaymentType, LOAN_PRODUCT_LABELS, CalculatorResult as CalculatorResultType,
 } from '../types';
 import CalculatorResult, { AmortisationTable, CalculatorResultSkeleton } from './CalculatorResult';
@@ -44,6 +44,20 @@ function openWhatsApp(phone: string, message: string) {
   window.open(`https://wa.me/${clean}${text}`, '_blank', 'noopener');
 }
 
+const CATEGORY_EXPORT_LABELS: Record<CategoryCode, string> = {
+  SSB: 'Civil Servants',
+  GOVT_PENSIONER: 'Government Pensioners',
+  SME: 'SME',
+  PRIVATE_SECTOR: 'Private Sector',
+};
+
+/** "LOS-0103 Michelle Chinodya (Private Sector).pdf" */
+function pdfFileName(a: Application): string {
+  const name = (a.full_name || '').replace(/[^\w .'-]/g, '').trim();
+  const type = CATEGORY_EXPORT_LABELS[a.category] || a.category;
+  return `${[a.reference_number, name].filter(Boolean).join(' ')} (${type}).pdf`;
+}
+
 interface ApplicationsViewProps {
   initialApplicationId?: string | null;
   onConsumedInitialApplication?: () => void;
@@ -60,6 +74,7 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
   const [selected, setSelected] = useState<Application | null>(null);
   const [pendingAction, setPendingAction] = useState<{ app: Application; mode: 'approve' | 'reject' } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('soledd_queue_view') as ViewMode) || 'grid');
 
   function setMode(m: ViewMode) {
@@ -67,9 +82,9 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
     localStorage.setItem('soledd_queue_view', m);
   }
 
-  async function load() {
+  async function load(archived = showArchived) {
     const [appsRes, statsRes] = await Promise.all([
-      requestJson('/applications'),
+      requestJson(`/applications${archived ? '?archived=true' : ''}`),
       requestJson('/applications/stats'),
     ]);
     setAllApps(appsRes.applications);
@@ -82,9 +97,18 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
   // status, or typing a search never re-hits the database.
   useEffect(() => {
     load();
-    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => load(), REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function toggleArchived() {
+    const next = !showArchived;
+    setShowArchived(next);
+    setSelected(null);
+    setLoading(true);
+    load(next);
+  }
 
   // Jumped here from another view (e.g. Chats → Applications) with a specific
   // application to open. Fires once the list has loaded, then clears itself.
@@ -120,9 +144,38 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
   }
 
   async function updateStatus(id: string, s: ApplicationStatus, note?: string) {
-    await requestJson(`/applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: s, note }) });
+    const r = await requestJson(`/applications/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: s, note }) });
     setAllApps(prev => prev.map(a => a.id === id ? { ...a, status: s } : a));
     if (selected?.id === id) setSelected({ ...selected, status: s });
+    return r as { application: Application; notificationMessage: string | null };
+  }
+
+  async function updateDetails(id: string, updates: Partial<Application> & { extra_details?: Record<string, any> }) {
+    const r = await requestJson(`/applications/${id}/details`, { method: 'PATCH', body: JSON.stringify(updates) });
+    setAllApps(prev => prev.map(a => a.id === id ? r.application : a));
+    setSelected(prev => prev && prev.id === id ? r.application : prev);
+  }
+
+  async function archiveApp(id: string, archived: boolean) {
+    await requestJson(`/applications/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived }) });
+    // In the default view an archived row drops out; in the archived view an
+    // un-archived one does. Either way, remove it from the current list.
+    setAllApps(prev => prev.filter(a => a.id !== id));
+    setSelected(null);
+  }
+
+  async function deleteApp(id: string) {
+    await requestJson(`/applications/${id}`, { method: 'DELETE' });
+    setAllApps(prev => prev.filter(a => a.id !== id));
+    setSelected(null);
+  }
+
+  async function exportLms() {
+    const month = window.prompt('Which month? (YYYY-MM, blank = current month)', '') || '';
+    const qs = /^\d{4}-\d{2}$/.test(month.trim()) ? `?month=${month.trim()}` : '';
+    const blob = await requestBlob(`/applications/export/lms-postings${qs}`);
+    const stamp = /^\d{4}-\d{2}$/.test(month.trim()) ? month.trim() : new Date().toISOString().slice(0, 7);
+    downloadBlob(blob, `soledd_lms_postings_${stamp}.xlsx`);
   }
 
   async function updateLoanTerms(id: string, terms: Partial<Pick<Application, 'loan_product' | 'borrower_type' | 'disbursement_date'>>) {
@@ -139,13 +192,16 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
 
   async function confirmPendingAction(note?: string) {
     if (!pendingAction) return;
-    await updateStatus(pendingAction.app.id, pendingAction.mode === 'approve' ? 'APPROVED' : 'REJECTED', note);
+    const { app, mode } = pendingAction;
+    const r = await updateStatus(app.id, mode === 'approve' ? 'APPROVED' : 'REJECTED', note);
     setPendingAction(null);
+    // Open a pre-filled WhatsApp chat so the officer sends the decision.
+    if (r?.notificationMessage) openWhatsApp(app.applicant_phone, r.notificationMessage);
   }
 
-  async function exportPdf(id: string, ref: string) {
-    const blob = await requestBlob(`/applications/${id}/pdf`);
-    downloadBlob(blob, `${ref}.pdf`);
+  async function exportPdf(a: Application) {
+    const blob = await requestBlob(`/applications/${a.id}/pdf`);
+    downloadBlob(blob, pdfFileName(a));
   }
 
   async function exportCrystal() {
@@ -171,12 +227,9 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
             <MiniStat value={String(stats.activeFieldAgents)} label="Active field agent" />
           </div>
         )}
-        <button
-          onClick={exportCrystal}
-          className="sm:ml-auto bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
-        >
-          Export to Excel
-        </button>
+        <div className="sm:ml-auto">
+          <ExportMenu onExportApplications={exportCrystal} onExportLms={exportLms} />
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -218,6 +271,14 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
             onChange={e => setSearch(e.target.value)}
             className="border border-rule rounded-full px-4 py-2 text-xs w-full sm:w-56 focus:outline-none focus:border-accent bg-card"
           />
+          <button
+            onClick={toggleArchived}
+            className={`shrink-0 px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-colors duration-150 ${
+              showArchived ? 'bg-solid border-solid text-white' : 'border-rule text-text-dim hover:border-ink'
+            }`}
+          >
+            {showArchived ? 'Viewing archived' : 'Archived'}
+          </button>
           <ViewToggle mode={viewMode} onChange={setMode} />
         </div>
       </div>
@@ -328,9 +389,12 @@ export default function ApplicationsView({ initialApplicationId, onConsumedIniti
           application={selected}
           onClose={() => setSelected(null)}
           onRequestStatusChange={mode => setPendingAction({ app: selected, mode })}
-          onExportPdf={() => exportPdf(selected.id, selected.reference_number)}
+          onExportPdf={() => exportPdf(selected)}
           onLoanTermsChange={terms => updateLoanTerms(selected.id, terms)}
           onAssignAgent={phone => updateAgentAssignment(selected.id, phone)}
+          onSaveDetails={updates => updateDetails(selected.id, updates)}
+          onArchive={() => archiveApp(selected.id, !selected.archived)}
+          onDelete={() => deleteApp(selected.id)}
         />
       )}
 
@@ -569,16 +633,33 @@ function MiniStat({ value, label, color }: { value: string; label: string; color
   );
 }
 
-function ApplicationDetail({ application, onClose, onRequestStatusChange, onExportPdf, onLoanTermsChange, onAssignAgent }: {
+const PANEL_WIDTH_KEY = 'soledd_app_panel_w';
+const PANEL_MIN = 420;
+
+function readStoredPanelWidth(): number {
+  const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+  if (stored >= PANEL_MIN) return stored;
+  return Math.round(Math.min(920, Math.max(PANEL_MIN, window.innerWidth * 0.5)));
+}
+
+function ApplicationDetail({ application, onClose, onRequestStatusChange, onExportPdf, onLoanTermsChange, onAssignAgent, onSaveDetails, onArchive, onDelete }: {
   application: Application;
   onClose: () => void;
   onRequestStatusChange: (mode: 'approve' | 'reject') => void;
   onExportPdf: () => void;
   onLoanTermsChange: (terms: Partial<Pick<Application, 'loan_product' | 'borrower_type' | 'disbursement_date'>>) => void;
   onAssignAgent: (agentPhone: string | null) => Promise<void>;
+  onSaveDetails: (updates: Partial<Application> & { extra_details?: Record<string, any> }) => Promise<void>;
+  onArchive: () => void;
+  onDelete: () => void;
 }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [docsLoading, setDocsLoading] = useState(true);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(readStoredPanelWidth);
+  const draggingRef = useRef(false);
 
   useEffect(() => {
     setDocsLoading(true);
@@ -587,18 +668,60 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
       .finally(() => setDocsLoading(false));
   }, [application.id]);
 
+  // Drag the left edge to resize; the width is remembered across sessions.
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!draggingRef.current) return;
+      const w = Math.min(window.innerWidth - 40, Math.max(PANEL_MIN, window.innerWidth - e.clientX));
+      setPanelWidth(w);
+    }
+    function onUp() {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.userSelect = '';
+      setPanelWidth(w => { localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(w))); return w; });
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const extras = extraDetailEntries(application.extra_details);
+  const DETAIL_PREVIEW = 4;
+  const visibleExtras = detailsExpanded ? extras : extras.slice(0, DETAIL_PREVIEW);
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-overlayIn" onClick={onClose}>
       <div
-        className="fixed top-0 right-0 h-full w-full sm:w-1/2 bg-card overflow-y-auto p-6 sm:p-8 shadow-2xl animate-panelIn"
+        className="fixed top-0 right-0 h-full w-full bg-card overflow-y-auto p-6 sm:p-8 shadow-2xl animate-panelIn sm:w-[var(--panel-w)]"
+        style={{ ['--panel-w' as any]: `${panelWidth}px` }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Resize handle (desktop only) */}
+        <div
+          onMouseDown={() => { draggingRef.current = true; document.body.style.userSelect = 'none'; }}
+          className="hidden sm:block absolute left-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-accent-bright/40 active:bg-accent-bright/60 transition-colors"
+          title="Drag to resize"
+        />
+
         <div className="flex justify-between items-start mb-6">
           <div>
-            <div className="font-mono-brand text-xs text-text-dim">{application.reference_number}</div>
+            <div className="font-mono-brand text-xs text-text-dim">
+              {application.reference_number}
+              {application.archived && <span className="ml-2 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-bg text-slate">Archived</span>}
+            </div>
             <h2 className="font-display text-xl font-bold">{application.full_name}</h2>
           </div>
-          <button onClick={onClose} className="text-text-dim hover:text-ink text-2xl leading-none transition-colors">×</button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold border border-rule rounded-lg px-3 py-1.5 hover:border-ink transition-colors"
+            >
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13.5V16h2.5l7.4-7.4-2.5-2.5L4 13.5ZM15.7 6.3a1 1 0 0 0 0-1.4l-1.6-1.6a1 1 0 0 0-1.4 0l-1.2 1.2 3 3 1.2-1.2Z"/></svg>
+              Edit
+            </button>
+            <button onClick={onClose} className="text-text-dim hover:text-ink text-2xl leading-none transition-colors">×</button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 text-sm mb-6">
@@ -609,6 +732,7 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
           <Field label="Loan Amount" value={`$${Number(application.loan_amount).toFixed(2)}`} />
           <Field label="Repayment Period" value={`${application.repayment_months} months`} />
           <Field label="Applicant Phone" value={application.applicant_phone} />
+          <Field label="LMS Loan No." value={application.lms_loan_number || '-'} />
         </div>
 
         <div className="mb-6">
@@ -617,15 +741,29 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
 
         <LoanRepaymentCalculator application={application} onTermsChange={onLoanTermsChange} />
 
-        {extraDetailEntries(application.extra_details).length > 0 && (
-          <div className="border-t border-rule pt-4 mb-6 max-h-64 overflow-y-auto">
-            <div className="text-xs uppercase tracking-wide text-text-dim mb-3 font-semibold">Full Application Details</div>
-            {extraDetailEntries(application.extra_details).map(([k, v]) => (
-              <div key={k} className="mb-2.5 text-sm">
-                <div className="text-xs text-text-dim">{humanizeFieldKey(k)}</div>
-                <div>{String(v)}</div>
-              </div>
-            ))}
+        {extras.length > 0 && (
+          <div className="border-t border-rule pt-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs uppercase tracking-wide text-text-dim font-semibold">Full Application Details</div>
+              {extras.length > DETAIL_PREVIEW && (
+                <button onClick={() => setDetailsExpanded(x => !x)} className="text-xs font-semibold text-accent-bright hover:underline">
+                  {detailsExpanded ? 'Show less' : `Expand all (${extras.length})`}
+                </button>
+              )}
+            </div>
+            <div>
+              {visibleExtras.map(([k, v]) => (
+                <div key={k} className="mb-2.5 text-sm">
+                  <div className="text-xs text-text-dim">{humanizeFieldKey(k)}</div>
+                  <div>{String(v)}</div>
+                </div>
+              ))}
+            </div>
+            {!detailsExpanded && extras.length > DETAIL_PREVIEW && (
+              <button onClick={() => setDetailsExpanded(true)} className="text-xs font-semibold text-accent-bright hover:underline mt-1">
+                + {extras.length - DETAIL_PREVIEW} more
+              </button>
+            )}
           </div>
         )}
 
@@ -635,9 +773,13 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
           <button onClick={() => onRequestStatusChange('approve')} className="bg-sage text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Approve</button>
           <button onClick={() => onRequestStatusChange('reject')} className="bg-accent-deep text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Reject</button>
           <button onClick={onExportPdf} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors">Export PDF</button>
+          <button onClick={onArchive} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors">
+            {application.archived ? 'Restore' : 'Archive'}
+          </button>
+          <button onClick={() => setConfirmDelete(true)} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg text-accent hover:border-accent transition-colors">Delete</button>
         </div>
 
-        <div className="border-t border-rule pt-4">
+        <div className="border-t border-rule pt-4 mb-6">
           <div className="text-xs uppercase tracking-wide text-text-dim mb-2 font-semibold">Request More Info</div>
           <div className="text-xs text-text-dim mb-3">Opens a WhatsApp chat with the applicant so you can send it yourself.</div>
           <button
@@ -648,7 +790,231 @@ function ApplicationDetail({ application, onClose, onRequestStatusChange, onExpo
             Open WhatsApp Chat
           </button>
         </div>
+
+        <ActivityTimeline applicationId={application.id} />
       </div>
+
+      {editing && (
+        <EditApplicationModal
+          application={application}
+          onCancel={() => setEditing(false)}
+          onSave={async updates => { await onSaveDetails(updates); setEditing(false); }}
+        />
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[70] p-6 animate-overlayIn" onClick={() => setConfirmDelete(false)}>
+          <div className="bg-card rounded-2xl max-w-sm w-full p-6 animate-modalIn" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display font-bold text-lg mb-1">Delete this application?</h3>
+            <div className="text-sm text-text-dim mb-5">
+              {application.full_name} · {application.reference_number}. This permanently removes the application, its documents, and its activity history. Consider <span className="font-semibold">Archive</span> instead.
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="flex-1 border border-rule text-sm font-semibold px-4 py-2.5 rounded-lg hover:border-ink transition-colors">Cancel</button>
+              <button onClick={onDelete} className="flex-1 bg-accent-deep text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:opacity-90 transition-opacity">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ACTIVITY_ICON: Record<string, string> = {
+  CREATED: 'M10 3v14M3 10h14',
+  STATUS_CHANGED: 'M4 10.5l4 4 8-9',
+  LOAN_TERMS_UPDATED: 'M4 7h12M4 12h8',
+  AGENT_ASSIGNED: 'M7 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3 16c.5-2.5 2-4 4-4s3.5 1.5 4 4',
+  DETAILS_EDITED: 'M4 13.5V16h2.5l7.4-7.4-2.5-2.5L4 13.5Z',
+  INFO_REQUESTED: 'M10 7v.01M10 10v4M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z',
+  ARCHIVED: 'M3 6h14M5 6v10h10V6M8 9h4',
+  UNARCHIVED: 'M3 6h14M5 6v10h10V6M8 9h4',
+  EXPORTED: 'M10 3v10M6 9l4 4 4-4M4 17h12',
+  NOTE: 'M5 4h10v12H5zM8 8h4M8 11h4',
+};
+
+function activityWhen(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-ZW', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function ActivityTimeline({ applicationId }: { applicationId: string }) {
+  const [activity, setActivity] = useState<ActivityEntry[] | null>(null);
+
+  useEffect(() => {
+    setActivity(null);
+    requestJson(`/applications/${applicationId}/activity`).then(r => setActivity(r.activity)).catch(() => setActivity([]));
+  }, [applicationId]);
+
+  return (
+    <div className="border-t border-rule pt-4">
+      <div className="text-xs uppercase tracking-wide text-text-dim mb-4 font-semibold">Activity</div>
+      {activity === null && (
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-9 rounded-lg skeleton animate-shimmer" />)}
+        </div>
+      )}
+      {activity !== null && activity.length === 0 && <div className="text-sm text-text-dim">No activity recorded yet.</div>}
+      {activity !== null && activity.length > 0 && (
+        <ol className="relative border-l border-rule ml-3">
+          {activity.map(e => (
+            <li key={e.id} className="mb-5 ml-6 last:mb-0">
+              <span className="absolute -left-[13px] flex items-center justify-center w-6 h-6 rounded-full bg-card border border-rule text-text-dim">
+                <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={ACTIVITY_ICON[e.type] || ACTIVITY_ICON.NOTE} />
+                </svg>
+              </span>
+              <div className="text-sm font-semibold">{e.summary}</div>
+              <div className="text-xs text-text-dim mt-0.5">
+                {e.actor_name || 'WhatsApp bot'}{e.actor_email ? ` · ${e.actor_email}` : ''} · {activityWhen(e.created_at)}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+const EDIT_TEXT_FIELDS: { key: keyof Application; label: string; type?: string }[] = [
+  { key: 'full_name', label: 'Full name' },
+  { key: 'national_id', label: 'National ID' },
+  { key: 'employer_name', label: 'Employer / Business' },
+  { key: 'applicant_phone', label: 'Applicant phone (WhatsApp)' },
+  { key: 'lms_loan_number', label: 'LMS loan number' },
+  { key: 'loan_amount', label: 'Loan amount (USD)', type: 'number' },
+  { key: 'repayment_months', label: 'Repayment period (months)', type: 'number' },
+];
+
+function EditApplicationModal({ application, onCancel, onSave }: {
+  application: Application;
+  onCancel: () => void;
+  onSave: (updates: Partial<Application> & { extra_details?: Record<string, any> }) => Promise<void>;
+}) {
+  const [core, setCore] = useState<Record<string, string>>(() => {
+    const o: Record<string, string> = {};
+    for (const f of EDIT_TEXT_FIELDS) o[f.key as string] = application[f.key] == null ? '' : String(application[f.key]);
+    return o;
+  });
+  const initialExtras = extraDetailEntries(application.extra_details);
+  const [extras, setExtras] = useState<Record<string, string>>(() => Object.fromEntries(initialExtras.map(([k, v]) => [k, String(v)])));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const updates: any = {};
+      for (const f of EDIT_TEXT_FIELDS) {
+        const raw = core[f.key as string].trim();
+        updates[f.key] = f.type === 'number' ? Number(raw) : (raw || null);
+      }
+      const changedExtras: Record<string, any> = {};
+      for (const [k, v] of initialExtras) {
+        if (String(v) !== extras[k]) changedExtras[k] = extras[k];
+      }
+      if (Object.keys(changedExtras).length) updates.extra_details = changedExtras;
+      await onSave(updates);
+    } catch (e: any) {
+      setError(e.message || 'Could not save changes.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[70] p-4 sm:p-6 animate-overlayIn" onClick={onCancel}>
+      <div className="bg-card rounded-2xl max-w-lg w-full p-6 animate-modalIn max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <h3 className="font-display font-bold text-lg mb-1">Edit application</h3>
+        <div className="text-sm text-text-dim mb-5">{application.reference_number}</div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          {EDIT_TEXT_FIELDS.map(f => (
+            <div key={f.key as string} className={f.key === 'full_name' ? 'sm:col-span-2' : ''}>
+              <label className="block text-[11px] uppercase tracking-wide text-text-dim mb-1.5">{f.label}</label>
+              <input
+                type={f.type || 'text'}
+                value={core[f.key as string]}
+                onChange={e => setCore({ ...core, [f.key as string]: e.target.value })}
+                className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-paper focus:outline-none focus:border-accent"
+              />
+            </div>
+          ))}
+        </div>
+
+        {initialExtras.length > 0 && (
+          <div className="border-t border-rule pt-4 mb-4">
+            <div className="text-[11px] uppercase tracking-wide text-text-dim font-semibold mb-2">Other captured answers</div>
+            <div className="flex flex-col gap-2.5">
+              {initialExtras.map(([k]) => (
+                <div key={k}>
+                  <label className="block text-[10.5px] text-text-dim mb-1">{humanizeFieldKey(k)}</label>
+                  <textarea
+                    rows={1}
+                    value={extras[k]}
+                    onChange={e => setExtras({ ...extras, [k]: e.target.value })}
+                    className="w-full border border-rule rounded-lg px-3 py-1.5 text-sm bg-paper focus:outline-none focus:border-accent resize-y"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <div className="text-sm text-accent mb-3">{error}</div>}
+
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 border border-rule text-sm font-semibold px-4 py-2.5 rounded-lg hover:border-ink transition-colors">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportMenu({ onExportApplications, onExportLms }: { onExportApplications: () => void; onExportLms: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap flex items-center gap-2"
+      >
+        Export
+        <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M5 8l5 5 5-5"/></svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-64 bg-card border border-rule rounded-xl shadow-lg z-20 origin-top-right animate-modalIn p-1.5">
+          <button onClick={() => { setOpen(false); onExportApplications(); }} className="w-full text-left px-3 py-2.5 rounded-lg text-sm hover:bg-card-tint">
+            <div className="font-semibold">Applications (.xlsx)</div>
+            <div className="text-xs text-text-dim">Every application with its details.</div>
+          </button>
+          <button onClick={() => { setOpen(false); onExportLms(); }} className="w-full text-left px-3 py-2.5 rounded-lg text-sm hover:bg-card-tint">
+            <div className="font-semibold">LMS postings (.xlsx)</div>
+            <div className="text-xs text-text-dim">Approved loans as a monthly repayment-postings batch for Loan Performer.</div>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

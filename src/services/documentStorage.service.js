@@ -80,4 +80,14 @@ async function getSignedUrl(storagePath, expiresInSeconds = 300) {
   return data.signedUrl;
 }
 
-module.exports = { storeDocument, listDocuments, listAgentApplicationDocuments, getSignedUrl };
+/** Removes the stored file and its row — used when an application is deleted. */
+async function deleteDocument(documentId, storagePath) {
+  if (storagePath) {
+    const { error: rmErr } = await supabase.storage.from('documents').remove([storagePath]);
+    if (rmErr) console.error('[DOCS] storage remove failed:', rmErr.message);
+  }
+  const { error } = await supabase.from('documents').delete().eq('id', documentId);
+  if (error) throw new Error(error.message);
+}
+
+module.exports = { storeDocument, listDocuments, listAgentApplicationDocuments, getSignedUrl, deleteDocument };

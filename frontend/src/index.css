@@ -90,6 +90,33 @@ body {
   transform: scaleX(1);
 }
 
+/* Slim, unobtrusive scrollbars everywhere (WebKit + Firefox).
+   Opt a container fully out with .no-scrollbar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-rule) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--c-rule);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--c-text-dim);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;

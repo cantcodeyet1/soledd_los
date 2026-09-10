@@ -59,7 +59,7 @@ async function handleUpload({ text, buttonId, media, flowData }) {
     } catch (err) {
       console.error('[DOCS] storeDocument failed:', err.message);
       return {
-        messages: [{ type: 'text', body: `Sorry, that upload failed. Please try sending *${label}* again.` }],
+        messages: [{ type: 'interactive', body: `Sorry, that upload failed. Please try sending *${label}* again.`, buttons: [{ id: 'SKIP_DOC', title: 'Skip for now' }, RETURN_BUTTON] }],
         nextStep: 'DOCUMENT_UPLOAD',
         updatedData: {},
       };
@@ -69,7 +69,7 @@ async function handleUpload({ text, buttonId, media, flowData }) {
   }
 
   return {
-    messages: [{ type: 'text', body: `Please attach *${label}* as a photo or file, or reply SKIP.` }],
+    messages: [{ type: 'interactive', body: `Please attach *${label}* as a photo or file, or reply SKIP.`, buttons: [{ id: 'SKIP_DOC', title: 'Skip for now' }, RETURN_BUTTON] }],
     nextStep: 'DOCUMENT_UPLOAD',
     updatedData: {},
   };

@@ -130,6 +130,46 @@ def _first_nonempty(answers, keys):
     return ""
 
 
+# Titles we recognise at the front of a combined name line. Order matters
+# only for display; matching is on the whole first token.
+_TITLES = {
+    "mr": "Mr.", "mrs": "Mrs.", "ms": "Ms.", "miss": "Miss",
+    "dr": "Dr.", "prof": "Prof.", "rev": "Rev.",
+}
+
+
+def split_name(name_line):
+    """'Mrs Michelle Chinodya' -> ('Mrs.', 'Michelle', 'Chinodya').
+
+    Returns (title, first_names, surname). Any part may be '' — a bare
+    single word becomes the first name, an unrecognised leading word is kept
+    as part of the first names (not dropped)."""
+    tokens = str(name_line or "").strip().split()
+    if not tokens:
+        return "", "", ""
+
+    title = ""
+    first_token = tokens[0].lower().rstrip(".")
+    if first_token in _TITLES:
+        title = _TITLES[first_token]
+        tokens = tokens[1:]
+
+    if not tokens:
+        return title, "", ""
+    if len(tokens) == 1:
+        return title, tokens[0], ""
+
+    return title, " ".join(tokens[:-1]), tokens[-1]
+
+
+def tick_title(f, page_index, anchor_label, title):
+    """Ticks the Mr./Mrs./Ms./Miss box on a form, anchored to `anchor_label`.
+    Exact match on the normalised title, so 'Mrs' never also ticks 'Mr'."""
+    box = {"Mr.": "Mr.", "Mrs.": "Mrs.", "Ms.": "Ms.", "Miss": "Miss"}.get(title)
+    if box:
+        f.mark_choice(page_index, anchor_label, box)
+
+
 def resolve_full_name(answers, application):
     """Combined 'Mr Tinashe Moyo' style — for forms where First Names holds the whole name."""
     combined = _first_nonempty(answers, ["nameLine"])
@@ -221,16 +261,12 @@ def fill_government(payload, output_path):
     computed = payload.get("computed")
     f = FormFiller(f"{FORMS_DIR}/government_agreement.pdf")
 
-    # nameLine holds the combined "Mr Tinashe Moyo" answer — placed across the
-    # First Names box; the separate Surname box is left blank since the name
-    # isn't split into parts anymore (question grouping — see applicationQuestions.js).
-    name_line = resolve_full_name(answers, application)
-    title = name_line.strip().split(" ")[0].lower() if name_line else ""
-    if title.startswith("mr"):
-        f.mark_choice(0, "First Names", "Mr.")
-    elif title.startswith("mrs"):
-        f.mark_choice(0, "First Names", "Mrs.")
-    f.text_right(0, "First Names", name_line)
+    # nameLine holds the combined "Mrs Michelle Chinodya" answer — split it
+    # into the title tick-box, the First Names box, and the Surname box.
+    title, first_names, surname = split_name(resolve_full_name(answers, application))
+    tick_title(f, 0, "First Names", title)
+    f.text_right(0, "First Names", first_names)
+    f.text_right(0, "Surname", surname, dx=8)
 
     f.text_right(0, "ID", resolve_national_id(answers, application), dx=30)
 
@@ -271,14 +307,9 @@ def fill_sme(payload, output_path):
     # nameLine here is just "Mr Chipo" (title + first name only) — surname /
     # registered company name stays its own question since it also feeds the
     # employer_name database column.
-    name_line = resolve_first_names(answers, application)
-    title = name_line.strip().split(" ")[0].lower() if name_line else ""
-    if title.startswith("mr"):
-        f.mark_choice(0, "First Names", "Mr.")
-    elif title.startswith("mrs"):
-        f.mark_choice(0, "First Names", "Mrs.")
-
-    f.text_right(0, "First Names", name_line)
+    title, first_names, _ = split_name(resolve_first_names(answers, application))
+    tick_title(f, 0, "First Names", title)
+    f.text_right(0, "First Names", first_names or resolve_first_names(answers, application))
     f.text_below(0, "Surname/Registered", resolve_surname(answers, application), dy=14, occurrence=0)
     f.text_right(0, "ID", resolve_national_id(answers, application), dx=65)
     f.text_below(0, "Residential address of Applicant and business address", answers.get("address", ""), dy=16, width_chars=90)
@@ -314,10 +345,16 @@ def fill_private_sector(payload, output_path):
     f = FormFiller(f"{FORMS_DIR}/private_sector_application.pdf")
 
     # Page 0 — Personal / Next of Kin / Family / Budget / Facility
-    # nameLine ("Mr Tapiwa Ncube") goes across First Names; Surname is left
-    # blank. personalDetails ("dob, address, contact") goes into the larger
-    # Physical Address box — question grouping, see applicationQuestions.js.
-    f.text_right(0, "First Names", resolve_full_name(answers, application))
+    # nameLine ("Mr Tapiwa Ncube") is split into the title tick-box, First
+    # Names and Surname. personalDetails ("dob, address, contact") goes into
+    # the larger Physical Address box — see applicationQuestions.js.
+    title, first_names, surname = split_name(resolve_full_name(answers, application))
+    # This form has "Mr /Mrs/Ms/Miss /Other ......" as a fill-in line, not
+    # tick-boxes — write the title (no trailing dot) onto the line after it.
+    if title:
+        f.text_right(0, "Miss", title.rstrip("."), dx=34)
+    f.text_right(0, "First Names", first_names)
+    f.text_right(0, "Surname", surname, dx=8)
     f.text_right(0, "ID / Passport No.", resolve_national_id(answers, application))
     f.text_below(0, "Physical Address", answers.get("personalDetails") or resolve_contact(answers), dy=14, occurrence=0, width_chars=60)
     f.text_right(0, "Full names", answers.get("nextOfKin", ""), dx=10)

@@ -3,24 +3,22 @@ import { requestJson, resetOwnPassword } from '../services/api';
 import { AuthUser, CalculatorConfig, LoanProduct, LOAN_PRODUCT_LABELS, Officer, UserRole } from '../types';
 import Dropdown from './Dropdown';
 
+type SettingsTab = 'account' | 'loan' | 'team';
+
 export default function ProfileView({ user, displayName, onDisplayNameChange, onReplayTour }: {
   user: AuthUser;
   displayName: string;
   onDisplayNameChange: (name: string) => void;
   onReplayTour: () => void;
 }) {
-  const [nameDraft, setNameDraft] = useState(displayName);
-  const [nameSaved, setNameSaved] = useState(false);
-
   const isAdmin = user.role === 'ADMIN';
   const isOfficerAccount = user.email !== null;
 
-  function saveName(e: React.FormEvent) {
-    e.preventDefault();
-    onDisplayNameChange(nameDraft.trim() || 'Tendai Marufu');
-    setNameSaved(true);
-    setTimeout(() => setNameSaved(false), 2000);
-  }
+  const TABS: { id: SettingsTab; label: string }[] = [
+    { id: 'account', label: 'Account' },
+    ...(isAdmin ? [{ id: 'loan' as const, label: 'Loan Settings' }, { id: 'team' as const, label: 'Team' }] : []),
+  ];
+  const [tab, setTab] = useState<SettingsTab>('account');
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -32,36 +30,133 @@ export default function ProfileView({ user, displayName, onDisplayNameChange, on
         </div>
       </div>
 
-      <div className="border border-rule rounded-2xl p-6 bg-paper mb-6">
-        <h2 className="font-display font-bold text-base mb-4">Display name</h2>
-        <form onSubmit={saveName} className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={nameDraft}
-            onChange={e => setNameDraft(e.target.value)}
-            className="flex-1 border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card focus:outline-none focus:border-accent"
-          />
-          <button type="submit" className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
-            {nameSaved ? 'Saved ✓' : 'Save'}
-          </button>
-        </form>
-        <div className="text-xs text-text-dim mt-2.5">Shown as your initials in the top-right corner of the dashboard.</div>
-      </div>
-
-      <div className="border border-rule rounded-2xl p-6 bg-paper mb-6 flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="font-display font-bold text-base mb-1">App walkthrough</h2>
-          <div className="text-xs text-text-dim">A quick tour of the dashboard's main pages.</div>
+      {TABS.length > 1 && (
+        <div className="flex gap-1 p-1 mb-6 bg-card-tint border border-rule rounded-xl">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 text-sm font-semibold px-4 py-2 rounded-lg transition-colors ${
+                tab === t.id ? 'bg-card text-ink shadow-sm border border-rule' : 'text-text-dim hover:text-ink'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-        <button onClick={onReplayTour} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors whitespace-nowrap">
-          Replay walkthrough
+      )}
+
+      {tab === 'account' && (
+        <div className="flex flex-col gap-6">
+          <AccountNameCard displayName={displayName} onDisplayNameChange={onDisplayNameChange} />
+          <div className="border border-rule rounded-2xl p-6 bg-paper flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="font-display font-bold text-base mb-1">App walkthrough</h2>
+              <div className="text-xs text-text-dim">A quick tour of the dashboard's main pages.</div>
+            </div>
+            <button onClick={onReplayTour} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink transition-colors whitespace-nowrap">
+              Replay walkthrough
+            </button>
+          </div>
+          {isOfficerAccount ? <OfficerPasswordCard /> : <SharedPasswordCard />}
+        </div>
+      )}
+
+      {tab === 'loan' && isAdmin && (
+        <div className="flex flex-col gap-6">
+          <CalculatorRatesCard />
+          <LmsExportCard />
+        </div>
+      )}
+
+      {tab === 'team' && isAdmin && (
+        <div className="flex flex-col gap-6">
+          <AgentCommissionCard />
+          <CreditOfficersCard />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountNameCard({ displayName, onDisplayNameChange }: { displayName: string; onDisplayNameChange: (name: string) => void }) {
+  const [nameDraft, setNameDraft] = useState(displayName);
+  const [nameSaved, setNameSaved] = useState(false);
+
+  function saveName(e: React.FormEvent) {
+    e.preventDefault();
+    onDisplayNameChange(nameDraft.trim() || 'Tendai Marufu');
+    setNameSaved(true);
+    setTimeout(() => setNameSaved(false), 2000);
+  }
+
+  return (
+    <div className="border border-rule rounded-2xl p-6 bg-paper">
+      <h2 className="font-display font-bold text-base mb-4">Display name</h2>
+      <form onSubmit={saveName} className="flex flex-col sm:flex-row gap-2">
+        <input
+          value={nameDraft}
+          onChange={e => setNameDraft(e.target.value)}
+          className="flex-1 border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card focus:outline-none focus:border-accent"
+        />
+        <button type="submit" className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
+          {nameSaved ? 'Saved ✓' : 'Save'}
         </button>
+      </form>
+      <div className="text-xs text-text-dim mt-2.5">Shown as your initials in the top-right corner of the dashboard.</div>
+    </div>
+  );
+}
+
+function LmsExportCard() {
+  const [cfg, setCfg] = useState<{ glAccount: string; savProdId: string; mode: number; voucherPrefix: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    requestJson('/settings/lms-postings').then(setCfg).catch(() => setCfg({ glAccount: '127010', savProdId: 'S00', mode: 1, voucherPrefix: 'PEN USD' }));
+  }, []);
+
+  async function save() {
+    if (!cfg) return;
+    setSaving(true);
+    await requestJson('/settings/lms-postings', { method: 'PUT', body: JSON.stringify(cfg) });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  if (!cfg) return null;
+
+  return (
+    <div className="border border-rule rounded-2xl p-6 bg-paper">
+      <h2 className="font-display font-bold text-base mb-1">LMS repayment-postings export</h2>
+      <div className="text-xs text-text-dim mb-4">
+        Defaults used by <span className="font-semibold">Loans → Export → LMS postings</span>. Each approved loan becomes one
+        posting row (this month's instalment, dated to month-end) for import into Loan Performer.
       </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <LmsField label="GL Account" value={cfg.glAccount} onChange={v => setCfg({ ...cfg, glAccount: v })} />
+        <LmsField label="Savings Product ID" value={cfg.savProdId} onChange={v => setCfg({ ...cfg, savProdId: v })} />
+        <LmsField label="Voucher Prefix" value={cfg.voucherPrefix} onChange={v => setCfg({ ...cfg, voucherPrefix: v })} />
+        <div>
+          <label className="block text-[10.5px] text-text-dim mb-1">Mode</label>
+          <input type="number" value={cfg.mode} onChange={e => setCfg({ ...cfg, mode: Number(e.target.value) })} className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-card" />
+        </div>
+      </div>
+      <div className="text-[11px] text-text-dim mt-2">Voucher no. becomes e.g. "{cfg.voucherPrefix} JANUARY 2026".</div>
+      <button onClick={save} disabled={saving} className="border border-rule text-sm font-semibold px-4 py-2 rounded-lg hover:border-ink mt-4 disabled:opacity-60 w-full sm:w-auto">
+        {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
+      </button>
+    </div>
+  );
+}
 
-      {isOfficerAccount ? <OfficerPasswordCard /> : <SharedPasswordCard />}
-
-      {isAdmin && <CalculatorRatesCard />}
-      {isAdmin && <AgentCommissionCard />}
-      {isAdmin && <CreditOfficersCard />}
+function LmsField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-[10.5px] text-text-dim mb-1">{label}</label>
+      <input value={value} onChange={e => onChange(e.target.value)} className="w-full border border-rule rounded-lg px-3 py-2 text-sm bg-card" />
     </div>
   );
 }

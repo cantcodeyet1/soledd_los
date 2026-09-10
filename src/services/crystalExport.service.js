@@ -98,4 +98,83 @@ async function buildAgentsExport(agents) {
   return workbook.xlsx.writeBuffer();
 }
 
-module.exports = { buildCrystalExport, buildAgentsExport };
+// ─── LMS monthly repayment-postings export ─────────────────────────────────
+// Mirrors the client's "PEN <PERIOD> POSTINGS.xlsx" sample:
+//   Sheet1 — the import batch itself, one row per approved loan:
+//     Loan Number   → applications.lms_loan_number, else the LOS reference
+//                     (staff fill lms_loan_number in once the loan is booked
+//                     in the LMS so it matches the LMS's own account number)
+//     Repayment Date→ month-end of the selected month
+//     Repaid Amount → this month's total instalment (incl. collection fee),
+//                     from the loan calculator
+//     Mode          → config.mode (default 1)
+//     Cheque No.    → 0
+//     Recalculate / Cleared / Clearing date / Close loan… / Member No. → blank
+//     Voucher No.   → "<voucherPrefix> <MONTH> <YEAR>", e.g. "PEN USD JANUARY 2026"
+//     Gl. Account   → config.glAccount (default "127010")
+//     savprodid     → config.savProdId (default "S00")
+//   Sheet2 — Name / Amount / Loan Number reconciliation list.
+// glAccount, savProdId, mode and voucherPrefix are editable in Profile → LMS
+// Export (settings key 'lms_postings_config').
+
+const LMS_SHEET1_COLUMNS = [
+  'Loan Number', 'Repayment Date', 'Repaid Amount', 'Mode', 'Cheque No.',
+  'Recalculate', 'Voucher No.', 'Gl. Account', 'Cleared', 'Clearing date',
+  'Close loan with No interest? ', 'Member No.', 'savprodid',
+];
+
+const MONTH_NAMES = [
+  'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+];
+
+async function buildLmsPostingsExport(rows, { year, month0, config = {} }) {
+  const glAccount = String(config.glAccount || '127010');
+  const savProdId = String(config.savProdId || 'S00');
+  const mode = config.mode == null ? 1 : Number(config.mode);
+  const voucherPrefix = config.voucherPrefix || 'PEN USD';
+  const voucherNo = `${voucherPrefix} ${MONTH_NAMES[month0]} ${year}`;
+  const repaymentDate = new Date(year, month0 + 1, 0); // last day of the month
+
+  const workbook = new ExcelJS.Workbook();
+
+  const sheet1 = workbook.addWorksheet('Sheet1');
+  sheet1.addRow(LMS_SHEET1_COLUMNS);
+  sheet1.getRow(1).font = { bold: true };
+
+  const sheet2 = workbook.addWorksheet('Sheet2');
+
+  for (const { application, computed } of rows) {
+    const loanNumber = application.lms_loan_number || application.reference_number;
+    const amount = computed ? round2(computed.totalMonthlyInstalment) : round2(monthlyFallback(application));
+
+    sheet1.addRow([
+      loanNumber, repaymentDate, amount, mode, 0,
+      null, voucherNo, glAccount, null, null,
+      null, null, savProdId,
+    ]);
+    sheet2.addRow([application.full_name, amount, loanNumber]);
+  }
+
+  sheet1.getColumn(2).numFmt = 'yyyy-mm-dd';
+  sheet1.getColumn(3).numFmt = '0.00';
+  sheet1.getColumn(1).width = 16;
+  sheet1.getColumn(7).width = 24;
+  sheet2.getColumn(1).width = 32;
+  sheet2.getColumn(3).width = 16;
+
+  return workbook.xlsx.writeBuffer();
+}
+
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Very rough fallback if the calculator can't price a loan: straight
+ *  principal / tenor. Real figures always come from computed. */
+function monthlyFallback(application) {
+  const months = Number(application.repayment_months) || 1;
+  return (Number(application.loan_amount) || 0) / months;
+}
+
+module.exports = { buildCrystalExport, buildAgentsExport, buildLmsPostingsExport };

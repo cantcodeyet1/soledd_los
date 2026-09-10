@@ -13,6 +13,12 @@ const { verificationPromiseText } = require('../utils/businessHours');
 const documentUploadEngine = require('./documentUploadEngine');
 
 const RETURN_BUTTON = { id: 'RETURN_MENU', title: '🔙 Main Menu' };
+const EDIT_BUTTON = { id: 'EDIT_ANSWER', title: '✏️ Edit answer' };
+
+// Tapped "Edit answer", or typed one of the edit commands.
+function isEditRequest(text, buttonId) {
+  return buttonId === EDIT_BUTTON.id || (!buttonId && EDIT_COMMAND.test((text || '').trim()));
+}
 
 // Durable fields worth offering to reuse from a repeat client's last
 // application — deliberately excludes per-application specifics like loan
@@ -59,7 +65,14 @@ async function findPriorApplication(customerPhone, nationalId) {
   return data || null;
 }
 
-function buildQuestionMessage(q) {
+/**
+ * canEdit — once the applicant has answered at least one question, every
+ * prompt carries a way back to a previous answer and to the main menu.
+ * yesno keeps Yes/No/Menu (WhatsApp allows only 3 reply buttons, no room
+ * for Edit); list-type questions add both as extra rows; free-text/amount
+ * questions get Edit + Menu buttons.
+ */
+function buildQuestionMessage(q, canEdit = false) {
   if (q.type === 'yesno') {
     return {
       type: 'interactive',
@@ -77,6 +90,7 @@ function buildQuestionMessage(q) {
         title: 'Options',
         rows: [
           ...q.options.map((o, i) => ({ id: `OPT_${i}`, title: o })),
+          ...(canEdit ? [{ id: EDIT_BUTTON.id, title: EDIT_BUTTON.title }] : []),
           { id: RETURN_BUTTON.id, title: RETURN_BUTTON.title },
         ],
       }],
@@ -92,6 +106,7 @@ function buildQuestionMessage(q) {
         title: 'Repayment Period',
         rows: [
           ...q.options.map(p => ({ id: `PERIOD_${p.months}`, title: p.label })),
+          ...(canEdit ? [{ id: EDIT_BUTTON.id, title: EDIT_BUTTON.title }] : []),
           { id: RETURN_BUTTON.id, title: RETURN_BUTTON.title },
         ],
       }],
@@ -99,24 +114,23 @@ function buildQuestionMessage(q) {
   }
 
   // text / amount
-  return { type: 'interactive', body: q.prompt, buttons: [RETURN_BUTTON] };
+  return {
+    type: 'interactive',
+    body: q.prompt,
+    buttons: canEdit ? [EDIT_BUTTON, RETURN_BUTTON] : [RETURN_BUTTON],
+  };
 }
 
 const EDIT_COMMAND = /^(back|edit|edit previous)$/i;
-
-/** Appends a one-time hint about the EDIT command once there's something to edit. */
-function withEditHint(msg, hasPriorAnswers) {
-  if (!hasPriorAnswers) return msg;
-  return { ...msg, body: `${msg.body}\n\n_Reply EDIT to fix a previous answer._` };
-}
 
 function displayValue(q, value) {
   if (q.type === 'period') return `${value} months`;
   return String(value);
 }
 
-/** Numbered text summary of every question answered so far, in order asked. */
-function editListMessage(questions, answers) {
+/** Numbered text summary of every question answered so far, plus an
+ *  interactive prompt that always carries a "Main Menu" button. */
+function editListMessages(questions, answers) {
   const answeredFields = Object.keys(answers);
   const lines = answeredFields.map((field, i) => {
     const q = questions.find(qq => qq.field === field);
@@ -124,10 +138,14 @@ function editListMessage(questions, answers) {
     return `${i + 1}. ${q.prompt}\n   → ${displayValue(q, answers[field])}`;
   }).filter(Boolean);
 
-  return {
-    type: 'text',
-    body: `Which answer would you like to fix? Reply with a number.\n\n${lines.join('\n\n')}\n\nReply CANCEL to go back without changes.`,
-  };
+  return [
+    { type: 'text', body: `Your answers so far:\n\n${lines.join('\n\n')}` },
+    {
+      type: 'interactive',
+      body: 'Reply with the number of the answer you want to fix, or CANCEL to carry on.',
+      buttons: [RETURN_BUTTON],
+    },
+  ];
 }
 
 /** Returns the parsed value, or null if the answer is invalid for this question type. */
@@ -217,11 +235,13 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
   const questions = questionsForCategory(flowData.categoryCode);
   const q = questions[flowData.qIndex];
 
-  // "EDIT"/"BACK" jumps into the edit-a-previous-answer sub-flow, remembering
-  // exactly which question to resume once they're done.
-  if (!buttonId && EDIT_COMMAND.test((text || '').trim()) && Object.keys(flowData.answers || {}).length > 0) {
+  const hasPrior = Object.keys(flowData.answers || {}).length > 0;
+
+  // "Edit answer" button / "EDIT"/"BACK" text jumps into the
+  // edit-a-previous-answer sub-flow, remembering which question to resume.
+  if (isEditRequest(text, buttonId) && hasPrior) {
     return {
-      messages: [editListMessage(questions, flowData.answers)],
+      messages: editListMessages(questions, flowData.answers),
       nextStep: 'APPLICATION_EDIT_SELECT',
       updatedData: { editReturnIndex: flowData.qIndex },
     };
@@ -231,7 +251,7 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
 
   if (value === null) {
     return {
-      messages: [withEditHint({ ...buildQuestionMessage(q), body: `Sorry, I didn't catch that.\n\n${q.prompt}` }, Object.keys(flowData.answers || {}).length > 0)],
+      messages: [{ ...buildQuestionMessage(q, hasPrior), body: `Sorry, I didn't catch that.\n\n${q.prompt}` }],
       nextStep: 'APPLICATION_CAPTURE',
       updatedData: {},
     };
@@ -262,7 +282,7 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
         messages: [{
           type: 'interactive',
           body: `Welcome back! We found your details on file:\n\n${summary}\n\nReuse these for this application?`,
-          buttons: [{ id: 'REUSE_YES', title: 'Yes, reuse' }, { id: 'REUSE_NO', title: 'No, re-enter' }],
+          buttons: [{ id: 'REUSE_YES', title: 'Yes, reuse' }, { id: 'REUSE_NO', title: 'No, re-enter' }, RETURN_BUTTON],
         }],
         nextStep: 'APPLICATION_REPEAT_CONFIRM',
         updatedData: { answers, pendingReuse: reuse, pendingNextIndex },
@@ -278,7 +298,7 @@ async function continueApplication({ text, buttonId, flowData, customerPhone }) 
 
   const nextQ = questions[nextIdx];
   return {
-    messages: [withEditHint(buildQuestionMessage(nextQ), true)],
+    messages: [buildQuestionMessage(nextQ, true)],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { answers, qIndex: nextIdx },
   };
@@ -311,7 +331,7 @@ function handleRepeatConfirm({ buttonId, text, flowData }) {
       messages: [{
         type: 'interactive',
         body: "Sorry, I didn't catch that. Reuse your details on file for this application?",
-        buttons: [{ id: 'REUSE_YES', title: 'Yes, reuse' }, { id: 'REUSE_NO', title: 'No, re-enter' }],
+        buttons: [{ id: 'REUSE_YES', title: 'Yes, reuse' }, { id: 'REUSE_NO', title: 'No, re-enter' }, RETURN_BUTTON],
       }],
       nextStep: 'APPLICATION_REPEAT_CONFIRM',
       updatedData: {},
@@ -327,7 +347,7 @@ function handleRepeatConfirm({ buttonId, text, flowData }) {
 
   const nextQ = questions[nextIdx];
   return {
-    messages: [withEditHint(buildQuestionMessage(nextQ), true)],
+    messages: [buildQuestionMessage(nextQ, true)],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { answers, qIndex: nextIdx },
   };
@@ -342,7 +362,7 @@ function handleEditSelect({ text, flowData }) {
   if (/^cancel$/i.test(t)) {
     const resumeQ = questions[flowData.editReturnIndex];
     return {
-      messages: [withEditHint(buildQuestionMessage(resumeQ), true)],
+      messages: [buildQuestionMessage(resumeQ, true)],
       nextStep: 'APPLICATION_CAPTURE',
       updatedData: { qIndex: flowData.editReturnIndex },
     };
@@ -351,7 +371,7 @@ function handleEditSelect({ text, flowData }) {
   const choice = parseInt(t, 10);
   if (!Number.isInteger(choice) || choice < 1 || choice > answeredFields.length) {
     return {
-      messages: [editListMessage(questions, flowData.answers)],
+      messages: editListMessages(questions, flowData.answers),
       nextStep: 'APPLICATION_EDIT_SELECT',
       updatedData: {},
     };
@@ -386,7 +406,7 @@ function handleEditCapture({ text, buttonId, flowData }) {
   return {
     messages: [
       { type: 'text', body: '✅ Updated.' },
-      withEditHint(buildQuestionMessage(resumeQ), true),
+      buildQuestionMessage(resumeQ, true),
     ],
     nextStep: 'APPLICATION_CAPTURE',
     updatedData: { answers, qIndex: flowData.editReturnIndex },

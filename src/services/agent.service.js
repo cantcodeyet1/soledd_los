@@ -166,6 +166,11 @@ async function listAgentApplications(status) {
   return data;
 }
 
+// How long an activation code issued on agent-application approval stays
+// valid — longer than the dashboard "Add agent" OTP (10 min) because the
+// officer has to relay this one to the applicant out-of-band.
+const ACTIVATION_CODE_TTL_HOURS = 72;
+
 async function decideAgentApplication(id, status, note) {
   const { data: application, error } = await supabase
     .from('agent_applications')
@@ -176,22 +181,27 @@ async function decideAgentApplication(id, status, note) {
   if (error) throw new Error(error.message);
   if (!application) return null;
 
+  let activationCode = null;
+
   if (status === 'APPROVED') {
+    // Approval registers the agent as PENDING with a fresh 6-digit
+    // activation code. They become a live field agent only once they send
+    // that code to the bot (webhook.controller.js → verifyOtp). The
+    // dashboard opens a WhatsApp chat pre-filled with the code so the
+    // officer can hand it over.
+    activationCode = generateOtp();
+    const expiresAt = new Date(Date.now() + ACTIVATION_CODE_TTL_HOURS * 3600 * 1000).toISOString();
+
     await supabase.from('agents').upsert({
       phone_number: application.applicant_phone,
       name: application.full_name,
       region: application.area,
-      verified: true,
+      verified: false,
       active: true,
-      otp_code: null,
-      otp_expires_at: null,
+      otp_code: activationCode,
+      otp_expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'phone_number' });
-
-    await whatsappService.sendMessage(
-      application.applicant_phone,
-      `Congratulations ${application.full_name.split(' ')[0]}! Your Soledd field agent application has been *Approved*. You now have access to the field agent menu here on WhatsApp.${note ? `\n\n${note}` : ''}`
-    );
   } else if (status === 'REJECTED') {
     await whatsappService.sendMessage(
       application.applicant_phone,
@@ -199,11 +209,20 @@ async function decideAgentApplication(id, status, note) {
     );
   }
 
-  return application;
+  return { ...application, activationCode };
+}
+
+/** The message the dashboard pre-fills into a WhatsApp chat after approving
+ *  an agent application. */
+function activationMessage(fullName, code) {
+  const first = (fullName || '').split(' ')[0] || 'there';
+  return `Congratulations ${first}! Your Soledd field agent application has been approved. `
+    + `Your activation code is ${code}. Reply to this chat with just that code to activate your field agent account. `
+    + `The code is valid for ${ACTIVATION_CODE_TTL_HOURS} hours.`;
 }
 
 module.exports = {
   listAgents, addAgent, resendOtp, findByPhone, verifyOtp, setActive, updateAgent, removeAgent,
   agentPerformance, getCommissionRatePct, setCommissionRatePct,
-  listAgentApplications, decideAgentApplication,
+  listAgentApplications, decideAgentApplication, activationMessage,
 };

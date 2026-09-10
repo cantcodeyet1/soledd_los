@@ -171,6 +171,15 @@ async function createApplication(customerPhone, appData) {
     return null;
   }
 
+  await supabase.from('application_activity').insert([{
+    application_id: inserted.id,
+    type: 'CREATED',
+    summary: appData.agentPhone
+      ? `Submitted via WhatsApp by field agent ${appData.agentPhone}`
+      : 'Submitted via WhatsApp',
+    detail: { category: inserted.category, loan_amount: inserted.loan_amount },
+  }]).then(({ error: e }) => e && console.error('[FLOW] activity log:', e.message));
+
   console.log(`[FLOW] Application created: ${inserted.reference_number} (${inserted.category})`);
   return inserted;
 }
