@@ -336,6 +336,13 @@ router.delete('/applications/:id', async (req, res) => {
     for (const d of docs) {
       await documentStorage.deleteDocument(d.id, d.storage_path).catch(err => console.error('[DELETE] doc cleanup:', err.message));
     }
+    // Also drop any bot-generated PDFs (loan agreement / stop orders).
+    try {
+      const { data: gen } = await supabase.storage.from('documents').list(`generated/${id}`, { limit: 100 });
+      if (gen && gen.length) await supabase.storage.from('documents').remove(gen.map(f => `generated/${id}/${f.name}`));
+    } catch (e) {
+      console.error('[DELETE] generated cleanup:', e.message);
+    }
     await supabase.from('application_activity').delete().eq('application_id', id);
     const { error } = await supabase.from('applications').delete().eq('id', id);
     if (error) throw error;

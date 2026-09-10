@@ -16,41 +16,39 @@
 
 const REQUIRED_DOCUMENTS = {
   SSB: [
+    'Signed loan agreement (the PDF I just sent you)',
+    'Signed SSB stop order (the deduction-form PDF I just sent you)',
     'Certified copy of ID',
     'Payslip',
     '3 months bank statements',
     'Letter of employment showing your address',
     'Proof of residence (water/ZESA bill)',
-    'Signed deduction code',
-    'Signed application form',
-    'Signed loan agreement',
   ],
   GOVT_PENSIONER: [
+    'Signed loan agreement (the PDF I just sent you)',
+    'Signed pensions stop order (the deduction-form PDF I just sent you)',
     'Certified copy of ID',
     '3 months bank statements',
     'Proof of residence (water/ZESA bill)',
     'Proof of income (pension confirmation)',
-    'Signed application form',
-    'Signed loan agreement',
   ],
   SME: [
+    'Signed loan agreement (the PDF I just sent you)',
     'Certified copy of ID (applicant and at least one director)',
     'Copy of security documents',
     'Proof of residence (not older than 3 months)',
     'Proof of income (cash flow/budget, contract, or consignment order)',
     'Curriculum vitae / business profile',
-    'Signed application form',
-    'Signed loan agreement',
   ],
   PRIVATE_SECTOR: [
+    'Signed loan agreement (the PDF I just sent you)',
+    'Signed USD salary deduction form (the PDF I just sent you)',
     'Certified copy of ID',
     'Payslip',
     '3 months bank statements',
     'Letter of employment showing your address',
     'Proof of residence (water/ZESA bill)',
     'Proof of income',
-    'Signed application form',
-    'Signed loan agreement',
   ],
   // "Become an Agent" — vetting documents, not a loan category, but reuses
   // the same generic document-collection engine.

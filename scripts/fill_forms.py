@@ -69,6 +69,36 @@ class FormFiller:
         for i, line in enumerate(wrap_text(value, width_chars)[:max_lines]):
             self._add(page_index, x, y0 - i * 11, line)
 
+    def text_in_box_below(self, page_index, label, value, occurrence=0, size=FONT_SIZE, x_pad=5, y_pad=5):
+        """Places `value` inside the ruled box that sits directly below
+        `label` (the deduction forms lay every field out that way). Falls
+        back to a plain line just under the label if no box is found."""
+        if value is None or str(value) == "":
+            return
+        try:
+            lb = find_label_bbox(self._page(page_index), label, occurrence)
+        except ValueError:
+            print(f"[WARN] label not found (box_below): {label!r} on page {page_index}", file=sys.stderr)
+            return
+        page = self._page(page_index)
+        # The input box directly under the label: starts within ~32pt below
+        # it, left edge roughly aligned, any width.
+        cands = [
+            r for r in page.rects
+            if lb["bottom"] - 3 <= r["top"] <= lb["bottom"] + 32
+            and r["x0"] <= lb["x0"] + 45
+            and r["x1"] > lb["x0"]
+            and 8 < (r["bottom"] - r["top"]) < 70
+        ]
+        if cands:
+            box = min(cands, key=lambda r: (r["top"], abs(r["x0"] - lb["x0"])))
+            x = box["x0"] + x_pad
+            y = self.page_height - box["bottom"] + y_pad
+        else:
+            x = lb["x0"] + x_pad
+            y = self.page_height - lb["bottom"] - 12
+        self._add(page_index, x, y, str(value), size=size)
+
     def text_row(self, page_index, x, row_top, row_bottom, text, size=7):
         """Places text inside a table cell whose PDF-space rect (row_top,
         row_bottom, both measured from the page top, pdfplumber-style) is
@@ -461,6 +491,65 @@ def fill_private_sector(payload, output_path):
     f.save(output_path)
 
 
+# ─── Salary / pension deduction ("stop order") forms ──────────────────────
+# All three share the same field set; only the template and the loan-account
+# label differ. Sent to the applicant alongside the loan agreement at the end
+# of the WhatsApp application so they can print, sign and send them back.
+DEDUCTION_FORMS = {
+    "DEDUCTION_SSB": {
+        "template": "ssb_deduction_form.pdf",
+        "account_label": "SOLEDD LOAN ACCOUNT NUMBER",
+        "has_employment_code": True,
+    },
+    "DEDUCTION_PENSIONS": {
+        "template": "pensions_deduction_form.pdf",
+        "account_label": "REFERENCE NUMBER",
+        "has_employment_code": False,
+    },
+    "DEDUCTION_PRIVATE": {
+        "template": "private_deduction_form.pdf",
+        "account_label": "SOLEDD LOAN ACCOUNT NUMBER",
+        "has_employment_code": True,
+    },
+}
+
+
+def fill_deduction_form(kind, payload, output_path):
+    cfg = DEDUCTION_FORMS[kind]
+    answers = payload.get("answers", {})
+    application = payload.get("application", {})
+    computed = payload.get("computed") or {}
+    f = FormFiller(f"{FORMS_DIR}/{cfg['template']}")
+
+    # Every field on these forms is "label, then a ruled box just below it".
+    _, first_names, surname = split_name(resolve_full_name(answers, application))
+    f.text_in_box_below(0, "SURNAME", surname)
+    f.text_in_box_below(0, "FIRST NAME", first_names)
+    if cfg["has_employment_code"]:
+        f.text_in_box_below(0, "EMPLOYMENT CODE NUMBER", answers.get("employmentCode", ""))
+
+    # Mark NEW — this is always a fresh deduction instruction. The tick box
+    # sits a little to the right of the word.
+    f.text_right(0, "NEW", "X", dx=22, dy=1)
+
+    monthly = computed.get("totalMonthlyInstalment")
+    if monthly is not None:
+        f.text_in_box_below(0, "MONTHLY AMOUNT", f"${float(monthly):.2f}")
+    tenor = computed.get("tenorMonths") or application.get("repaymentMonths")
+    if tenor:
+        f.text_in_box_below(0, "NUMBER OF DEDUCTIONS", str(tenor))
+    if computed.get("firstRepaymentDate"):
+        f.text_in_box_below(0, "START DATE", str(computed["firstRepaymentDate"]))
+    if computed.get("finalRepaymentDate"):
+        f.text_in_box_below(0, "END DATE", str(computed["finalRepaymentDate"]))
+
+    acct = application.get("lmsLoanNumber") or application.get("referenceNumber") or ""
+    f.text_in_box_below(0, cfg["account_label"], acct)
+    f.text_in_box_below(0, "NATIONAL ID NUMBER", resolve_national_id(answers, application))
+
+    f.save(output_path)
+
+
 CATEGORY_FILLERS = {
     "SSB": fill_government,
     "GOVT_PENSIONER": fill_government,
@@ -477,6 +566,11 @@ def main():
     category_code, payload_path, output_path = sys.argv[1], sys.argv[2], sys.argv[3]
     with open(payload_path, encoding="utf-8") as f:
         payload = json.load(f)
+
+    if category_code in DEDUCTION_FORMS:
+        fill_deduction_form(category_code, payload, output_path)
+        print(output_path)
+        return
 
     filler = CATEGORY_FILLERS.get(category_code)
     if not filler:

@@ -80,6 +80,23 @@ async function getSignedUrl(storagePath, expiresInSeconds = 300) {
   return data.signedUrl;
 }
 
+/**
+ * Uploads an arbitrary generated file (e.g. a filled loan agreement / stop
+ * order PDF) under generated/<applicationId>/ and returns a signed URL that
+ * Meta can fetch to deliver it on WhatsApp. Not tracked in the documents
+ * table — these are system-generated, not applicant uploads.
+ */
+async function storeGeneratedFile(applicationId, filename, buffer, expiresInSeconds = 3600) {
+  const safe = String(filename).replace(/[^\w.\- ]/g, '').replace(/\s+/g, '_') || 'file.pdf';
+  const storagePath = `generated/${applicationId}/${Date.now()}-${safe}`;
+  const { error } = await supabase.storage.from('documents').upload(storagePath, buffer, {
+    contentType: 'application/pdf',
+    upsert: true,
+  });
+  if (error) throw new Error(error.message);
+  return getSignedUrl(storagePath, expiresInSeconds);
+}
+
 /** Removes the stored file and its row — used when an application is deleted. */
 async function deleteDocument(documentId, storagePath) {
   if (storagePath) {
@@ -90,4 +107,4 @@ async function deleteDocument(documentId, storagePath) {
   if (error) throw new Error(error.message);
 }
 
-module.exports = { storeDocument, listDocuments, listAgentApplicationDocuments, getSignedUrl, deleteDocument };
+module.exports = { storeDocument, listDocuments, listAgentApplicationDocuments, getSignedUrl, deleteDocument, storeGeneratedFile };

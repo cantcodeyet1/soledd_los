@@ -20,6 +20,7 @@ const FILL_SCRIPT = path.join(PROJECT_ROOT, 'scripts', 'fill_forms.py');
 
 // Templates only exist for these categories.
 const SUPPORTED_CATEGORIES = new Set(['SSB', 'GOVT_PENSIONER', 'SME', 'PRIVATE_SECTOR']);
+const DEDUCTION_KINDS = new Set(['DEDUCTION_SSB', 'DEDUCTION_PENSIONS', 'DEDUCTION_PRIVATE']);
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
@@ -30,34 +31,23 @@ function run(command, args) {
   });
 }
 
-/**
- * @param categoryCode SSB | GOVT_PENSIONER | SME | PRIVATE_SECTOR
- * @param payload      { answers, application, computed } — answers is the raw
- *                      WhatsApp Q&A object; application is the clean DB
- *                      fields (phone, loan amount, etc.); computed is the
- *                      loanCalculator result for this loan (or null).
- * Returns a filled-PDF Buffer, or null if the template fill isn't available/fails.
- */
-async function fillFormPdf(categoryCode, payload) {
-  if (!SUPPORTED_CATEGORIES.has(categoryCode)) return null;
-
+/** Runs fill_forms.py <arg> and returns the output PDF Buffer, or null. */
+async function _runFill(arg, payload) {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'soledd-pdf-'));
   const answersPath = path.join(tmpDir, 'answers.json');
   const outputPath = path.join(tmpDir, 'output.pdf');
-
   try {
     await fs.writeFile(answersPath, JSON.stringify(payload), 'utf-8');
-
     let lastErr;
     for (const cmd of ['python3', 'python']) {
       try {
-        await run(cmd, [FILL_SCRIPT, categoryCode, answersPath, outputPath]);
+        await run(cmd, [FILL_SCRIPT, arg, answersPath, outputPath]);
         return await fs.readFile(outputPath);
       } catch (err) {
         lastErr = err;
       }
     }
-    console.error('[PDF_FILL] fill_forms.py failed:', lastErr?.message);
+    console.error(`[PDF_FILL] fill_forms.py ${arg} failed:`, lastErr?.message);
     return null;
   } catch (err) {
     console.error('[PDF_FILL] error:', err.message);
@@ -67,4 +57,23 @@ async function fillFormPdf(categoryCode, payload) {
   }
 }
 
-module.exports = { fillFormPdf };
+/**
+ * @param categoryCode SSB | GOVT_PENSIONER | SME | PRIVATE_SECTOR
+ * @param payload      { answers, application, computed }
+ * Returns a filled-PDF Buffer, or null if the template fill isn't available/fails.
+ */
+async function fillFormPdf(categoryCode, payload) {
+  if (!SUPPORTED_CATEGORIES.has(categoryCode)) return null;
+  return _runFill(categoryCode, payload);
+}
+
+/**
+ * Fills a salary/pension "stop order" deduction form.
+ * @param kind DEDUCTION_SSB | DEDUCTION_PENSIONS | DEDUCTION_PRIVATE
+ */
+async function fillDeductionForm(kind, payload) {
+  if (!DEDUCTION_KINDS.has(kind)) return null;
+  return _runFill(kind, payload);
+}
+
+module.exports = { fillFormPdf, fillDeductionForm };

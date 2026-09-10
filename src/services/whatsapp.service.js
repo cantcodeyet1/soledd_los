@@ -6,7 +6,12 @@
 
 'use strict';
 
-const axios = require('axios');
+const axiosBase = require('axios');
+
+// Every Graph API call gets a hard timeout — the webhook controller awaits
+// these before replying 200, so a hung Meta request must not wedge the whole
+// handler (and trigger Meta retries).
+const axios = axiosBase.create({ timeout: 15000 });
 
 const BASE_URL = 'https://graph.facebook.com/v18.0';
 
@@ -153,6 +158,38 @@ async function getBotNumber() {
   }
 }
 
+/**
+ * Sends a document (PDF etc.) by public HTTPS link. Meta fetches the link
+ * server-side at send time, so a short-lived signed URL is fine.
+ */
+async function sendDocument(to, link, filename, caption) {
+  const { token, phoneNumberId } = config();
+  if (!token || !phoneNumberId) {
+    console.warn('⚠️ WhatsApp not configured');
+    return { success: false, error: 'WhatsApp not configured' };
+  }
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to: to.replace(/\+/g, ''),
+        type: 'document',
+        document: {
+          link,
+          filename: (filename || 'document.pdf').slice(0, 240),
+          ...(caption ? { caption: String(caption).slice(0, 1024) } : {}),
+        },
+      },
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+    );
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('WhatsApp document send error:', error.response?.data || error.message);
+    return { success: false, error: error.response?.data || error.message };
+  }
+}
+
 /** Resolves a Meta media ID to a short-lived download URL + mime type. */
 async function getMediaUrl(mediaId) {
   const { token } = config();
@@ -168,6 +205,7 @@ async function downloadMedia(url) {
   const response = await axios.get(url, {
     headers: { Authorization: `Bearer ${token}` },
     responseType: 'arraybuffer',
+    timeout: 45000, // media can be large — allow longer than the default
   });
   return Buffer.from(response.data);
 }
@@ -180,4 +218,4 @@ function verifyWebhook(mode, token, challenge) {
   return null;
 }
 
-module.exports = { sendMessage, sendButtonMessage, sendListMessage, getMediaUrl, downloadMedia, verifyWebhook, getBotNumber };
+module.exports = { sendMessage, sendButtonMessage, sendListMessage, sendDocument, getMediaUrl, downloadMedia, verifyWebhook, getBotNumber };

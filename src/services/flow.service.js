@@ -10,6 +10,8 @@
 
 const { supabase } = require('../models/supabase');
 const whatsappService = require('./whatsapp.service');
+const completionForms = require('./completionForms.service');
+const documentStorage = require('./documentStorage.service');
 
 const mainFlow = require('../flows/mainFlow');
 const agentFlow = require('../flows/agentFlow');
@@ -67,6 +69,15 @@ async function dispatch(customerPhone, { text, buttonId, media, customer, state,
       if (updatedData) {
         updatedData = { ...updatedData, applicationId: application?.id || null, referenceNumber: reference };
       }
+
+      // Order matters: send the "Got it, reference X" line, then the
+      // sign-these forms package, then the document prompts.
+      if (application && outgoing.length > 0) {
+        const [head, ...rest] = outgoing;
+        await sendMessages(customerPhone, [head]);
+        await sendCompletionForms(customerPhone, application).catch(err => console.error('[FORMS] send failed:', err.message));
+        outgoing = rest;
+      }
     }
 
     if (agentApplicationData) {
@@ -81,6 +92,14 @@ async function dispatch(customerPhone, { text, buttonId, media, customer, state,
     }
 
     if (endFlow) {
+      // A document-collection flow that just wrapped up — note it on the app.
+      if (flowData.applicationId && (step === 'DOCUMENT_UPLOAD' || currentStep === 'DOCUMENT_UPLOAD')) {
+        await supabase.from('application_activity').insert([{
+          application_id: flowData.applicationId,
+          type: 'NOTE',
+          summary: 'Applicant finished sending documents and signed forms',
+        }]).then(({ error }) => error && console.error('[FLOW] activity log:', error.message));
+      }
       await clearFlowState(customerPhone);
     } else if (nextStep) {
       const merged = { ...flowData, ...(updatedData || {}) };
@@ -147,6 +166,58 @@ async function sendMessages(customerPhone, messages) {
       sent_by: 'bot',
     }]);
   }
+}
+
+/**
+ * Generates the loan agreement + relevant deduction ("stop order") form for
+ * a freshly created application, uploads them, and sends them to the
+ * applicant on WhatsApp with a "download, print, sign, scan, send back"
+ * instruction. Best-effort — a failure here never blocks the flow.
+ */
+async function sendCompletionForms(customerPhone, application) {
+  let forms;
+  try {
+    forms = await completionForms.buildCompletionForms(application);
+  } catch (err) {
+    console.error('[FORMS] build failed:', err.message);
+    return;
+  }
+  if (!forms || forms.length === 0) return;
+
+  for (const f of forms) {
+    try {
+      const link = await documentStorage.storeGeneratedFile(application.id, f.filename, f.buffer);
+      await whatsappService.sendDocument(
+        customerPhone, link, f.filename,
+        `${application.reference_number} — download, print, sign, then send it back here.`
+      );
+      await supabase.from('conversations').insert([{
+        customer_phone: customerPhone,
+        message_text: `[sent document: ${f.filename}]`,
+        direction: 'outbound',
+        timestamp: new Date().toISOString(),
+        sent_by: 'bot',
+      }]);
+    } catch (err) {
+      console.error(`[FORMS] send ${f.key} failed:`, err.message);
+    }
+  }
+
+  const list = forms.map(f => `• ${f.filename.replace(/\.pdf$/i, '')}`).join('\n');
+  await whatsappService.sendMessage(
+    customerPhone,
+    `I've sent you ${forms.length === 1 ? 'a form' : `${forms.length} forms`} to complete:\n\n${list}\n\n`
+    + `Please *download, print, sign, and scan* each one, then send the signed copies back here as a photo or file. `
+    + `Then send the other documents I ask for below — that completes your application.\n\n`
+    + `_The amounts and dates shown are provisional and may be adjusted when a credit officer finalises your loan._`
+  );
+  await supabase.from('conversations').insert([{
+    customer_phone: customerPhone,
+    message_text: '[sent forms instructions]',
+    direction: 'outbound',
+    timestamp: new Date().toISOString(),
+    sent_by: 'bot',
+  }]);
 }
 
 async function createApplication(customerPhone, appData) {
