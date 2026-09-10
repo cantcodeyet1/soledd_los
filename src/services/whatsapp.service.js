@@ -127,6 +127,32 @@ async function sendListMessage(to, bodyText, buttonLabel, sections) {
   }
 }
 
+let _botNumberCache = null;
+
+/**
+ * The bot's own WhatsApp number in display form (e.g. "+263 78 622 0151"),
+ * for telling people where to send an activation code. Prefers the
+ * WHATSAPP_BOT_NUMBER env var; otherwise reads display_phone_number from the
+ * Graph API once and caches it. Falls back to null if neither is available.
+ */
+async function getBotNumber() {
+  if (process.env.WHATSAPP_BOT_NUMBER) return process.env.WHATSAPP_BOT_NUMBER;
+  if (_botNumberCache) return _botNumberCache;
+  const { token, phoneNumberId } = config();
+  if (!token || !phoneNumberId) return null;
+  try {
+    const res = await axios.get(`${BASE_URL}/${phoneNumberId}`, {
+      params: { fields: 'display_phone_number' },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    _botNumberCache = res.data?.display_phone_number || null;
+    return _botNumberCache;
+  } catch (error) {
+    console.error('WhatsApp getBotNumber error:', error.response?.data || error.message);
+    return null;
+  }
+}
+
 /** Resolves a Meta media ID to a short-lived download URL + mime type. */
 async function getMediaUrl(mediaId) {
   const { token } = config();
@@ -154,4 +180,4 @@ function verifyWebhook(mode, token, challenge) {
   return null;
 }
 
-module.exports = { sendMessage, sendButtonMessage, sendListMessage, getMediaUrl, downloadMedia, verifyWebhook };
+module.exports = { sendMessage, sendButtonMessage, sendListMessage, getMediaUrl, downloadMedia, verifyWebhook, getBotNumber };

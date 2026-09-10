@@ -127,11 +127,22 @@ class WebhookController {
         sent_by: 'customer',
       }]);
 
-      // Field agents onboarded via the dashboard verify by replying with the
-      // OTP they were sent — intercept that here, before any flow dispatch.
+      // Field agents onboarded via the dashboard (or an approved agent
+      // application) activate by sending their 6-digit code to the bot —
+      // intercept that here, before any flow dispatch. We pull the first
+      // 6-digit run out of whatever they typed, so "my code is 497540" and
+      // "497540" both work.
       const agentRecord = await agentService.findByPhone(customerPhone);
       if (agentRecord && !agentRecord.verified) {
-        const result = await agentService.verifyOtp(customerPhone, messageText);
+        const codeMatch = (messageText || '').match(/\b(\d{6})\b/);
+        if (!codeMatch) {
+          await whatsappService.sendMessage(
+            customerPhone,
+            'Send the 6-digit activation code from your approval message to activate your Soledd field agent account.'
+          );
+          return;
+        }
+        const result = await agentService.verifyOtp(customerPhone, codeMatch[1]);
         if (result?.ok) {
           await whatsappService.sendMessage(customerPhone, "You're verified! Welcome to the Soledd field agent team. Send any message to get started.");
         } else if (result?.reason === 'expired') {

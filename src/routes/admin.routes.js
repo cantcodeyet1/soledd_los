@@ -735,12 +735,16 @@ router.patch('/agent-applications/:id/status', async (req, res) => {
     if (!application) return res.status(404).json({ error: 'Not found' });
 
     // On approval, hand the dashboard the activation code + a ready-to-send
-    // WhatsApp message so it can open a chat with the new agent.
+    // WhatsApp message (sent from the officer's number) so it can open a
+    // chat with the new agent. The message points them at the bot's number.
     const activationCode = application.activationCode || null;
+    const botNumber = activationCode ? await whatsappService.getBotNumber() : null;
     res.json({
       application,
       activationCode,
-      activationMessage: activationCode ? agentService.activationMessage(application.full_name, activationCode) : null,
+      activationMessage: activationCode
+        ? agentService.activationMessage(application.full_name, activationCode, botNumber)
+        : null,
       applicantPhone: application.applicant_phone,
     });
   } catch (err) {

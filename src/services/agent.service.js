@@ -213,11 +213,14 @@ async function decideAgentApplication(id, status, note) {
 }
 
 /** The message the dashboard pre-fills into a WhatsApp chat after approving
- *  an agent application. */
-function activationMessage(fullName, code) {
+ *  an agent application. This is sent from the officer's number, so it tells
+ *  the agent to send the code to the *bot* (not reply here). */
+function activationMessage(fullName, code, botNumber) {
   const first = (fullName || '').split(' ')[0] || 'there';
-  return `Congratulations ${first}! Your Soledd field agent application has been approved. `
-    + `Your activation code is ${code}. Reply to this chat with just that code to activate your field agent account. `
+  const where = botNumber ? ` on WhatsApp at ${botNumber}` : ' to the Soledd Loans WhatsApp bot';
+  return `Congratulations ${first}! Your Soledd field agent application has been approved.\n\n`
+    + `To activate your field agent account, send this code${where} — just the code, nothing else:\n\n`
+    + `${code}\n\n`
     + `The code is valid for ${ACTIVATION_CODE_TTL_HOURS} hours.`;
 }
 

@@ -797,7 +797,8 @@ function AgentApplicationConfirmModal({ application, mode, onCancel, onConfirm }
         {isApprove && (
           <div className="text-sm text-text-dim mb-5">
             This registers the applicant as a pending field agent and generates a 6-digit activation code.
-            A WhatsApp chat opens pre-filled with the code — the agent replies with it to activate their account.
+            A WhatsApp chat opens pre-filled with a message telling them to send that code to the Soledd bot;
+            once they do, their field agent account goes live.
           </div>
         )}
 
