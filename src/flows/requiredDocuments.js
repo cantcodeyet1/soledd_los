@@ -54,6 +54,7 @@ const REQUIRED_DOCUMENTS = {
   // the same generic document-collection engine.
   AGENT_APPLICATION: [
     'Certified copy of ID',
+    'Curriculum vitae (CV)',
     'Proof of residence (water/ZESA bill)',
     'Recent passport-size photo',
   ],
