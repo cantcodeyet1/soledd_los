@@ -13,6 +13,7 @@
 
 const loanCalculator = require('./loanCalculator.service');
 const pdfFormFill = require('./pdfFormFill.service');
+const aiFieldExtractor = require('./aiFieldExtractor.service');
 
 const DEDUCTION_FORM_BY_CATEGORY = {
   SSB:            { kind: 'DEDUCTION_SSB',      label: 'SSB stop order (salary deduction form)' },
@@ -26,9 +27,18 @@ const DEDUCTION_FORM_BY_CATEGORY = {
  */
 async function buildCompletionForms(application) {
   const computed = await loanCalculator.computeForApplication(application).catch(() => null);
+  const answers = application.extra_details || {};
+
+  // AI layer: turns the "all in one message" combined answers into clean,
+  // separated fields (name parts, individual phone numbers, bank name vs
+  // account number, next-of-kin parts, ...) so fill_forms.py can place each
+  // piece in its own box precisely. Best-effort - fill_forms.py falls back
+  // to its own regex splitters whenever this comes back null.
+  const aiFields = await aiFieldExtractor.extractFields(answers).catch(() => null);
 
   const payload = {
-    answers: application.extra_details || {},
+    answers,
+    aiFields: aiFields || undefined,
     application: {
       applicantPhone: application.applicant_phone,
       loanAmount: application.loan_amount,

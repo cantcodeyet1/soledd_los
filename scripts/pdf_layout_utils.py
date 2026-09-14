@@ -96,13 +96,30 @@ def find_option_near(page, question_phrase, option_phrase, occurrence=0, max_dto
     words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
     target = _alnum_only(option_phrase)
 
-    row_words = [w for w in words if abs(w["top"] - q["top"]) <= max_dtop]
+    # Some of these forms stack question rows only ~14pt apart, well inside
+    # any reasonable max_dtop - so widening straight to max_dtop can catch a
+    # neighbouring question's own YES/NO and tick the wrong row entirely.
+    # Search tightly (same row only) first and widen only if that finds
+    # nothing, so a genuinely close neighbour is never preferred over this
+    # question's own option.
+    for dtop in sorted({4, 10, max_dtop}):
+        row_words = [w for w in words if abs(w["top"] - q["top"]) <= dtop]
 
-    # exact single-word match first
-    exact = [w for w in row_words if _alnum_only(w["text"]) == target]
-    if exact:
-        c = exact[0]
-        return {"x0": c["x0"], "top": c["top"], "x1": c["x1"], "bottom": c["bottom"]}
+        # exact single-word match first. Some rows carry two question+option
+        # pairs side by side (e.g. "Do you own a motor vehicle YES/NO    Do
+        # you own a fixed property YES/NO") — picking the first match on the
+        # row would silently tick the OTHER question's box. Prefer the match
+        # that sits to the right of *this* question's label (normal reading
+        # order), and among those the nearest one, so each question claims
+        # its own copy.
+        exact = [w for w in row_words if _alnum_only(w["text"]) == target]
+        if exact:
+            after = [w for w in exact if w["x0"] >= q["x1"]]
+            pool = after if after else exact
+            c = min(pool, key=lambda w: (abs(w["top"] - q["top"]), abs(w["x0"] - q["x1"])))
+            return {"x0": c["x0"], "top": c["top"], "x1": c["x1"], "bottom": c["bottom"]}
+
+    row_words = [w for w in words if abs(w["top"] - q["top"]) <= max_dtop]
 
     # fuzzy: concatenate the row's words and look for the option as a substring
     frags = [_alnum_only(w["text"]) for w in row_words]
