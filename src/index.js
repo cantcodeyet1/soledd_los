@@ -7,6 +7,7 @@ const webhookRoutes = require('./routes/webhook.routes');
 const adminRoutes = require('./routes/admin.routes');
 const authRoutes = require('./routes/auth.routes');
 const { authenticate } = require('./middleware/auth');
+const keepAlive = require('./services/keepAlive.service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,7 +17,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  // Health pings arrive every few minutes - keep them out of the logs.
+  if (!req.path.startsWith('/health')) console.log(`${req.method} ${req.path}`);
   next();
 });
 
@@ -28,8 +30,22 @@ app.use('/webhook', webhookRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', authenticate, adminRoutes);
 
+// Cheap liveness check - no database. Wakes the server from a Render sleep.
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Liveness + a real database round trip. Point a free external pinger
+// (UptimeRobot / cron-job.org, every 5 min) at this: it keeps Render awake
+// AND counts as Supabase activity, and returns 503 if the database is down.
+app.get('/health/db', async (req, res) => {
+  const db = await keepAlive.pingDatabase();
+  res.status(db.ok ? 200 : 503).json({
+    status: db.ok ? 'ok' : 'degraded',
+    database: db.ok ? 'ok' : 'unreachable',
+    db_ms: db.ms,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get('/', (req, res) => {
@@ -53,6 +69,7 @@ async function start() {
 
   app.listen(PORT, () => {
     console.log(`\nSoledd LOS WhatsApp Bot running on http://localhost:${PORT}\n`);
+    keepAlive.start();
   });
 }
 
