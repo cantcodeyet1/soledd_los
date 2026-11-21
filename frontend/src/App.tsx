@@ -28,11 +28,19 @@ function initialsFrom(name: string) {
 
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
-  const [view, setView] = useState<View>('queue');
+  // Email links open the dashboard as /?application=<id> (straight to that
+  // loan) or /?view=agents. They survive the login screen because this is
+  // read once at load; the params are cleared from the address bar once used.
+  const [view, setView] = useState<View>(() => {
+    const v = new URLSearchParams(window.location.search).get('view');
+    return v === 'agents' ? 'agents' : 'queue';
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('soledd_display_name') || getStoredUser()?.name || 'Tendai Marufu');
   const [showTour, setShowTour] = useState(() => !localStorage.getItem(ONBOARDING_KEY));
-  const [jumpApplicationId, setJumpApplicationId] = useState<string | null>(null);
+  const [jumpApplicationId, setJumpApplicationId] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get('application'),
+  );
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -48,6 +56,7 @@ export default function App() {
   }
 
   function go(v: View) {
+    if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
     setView(v);
     setMenuOpen(false);
   }
@@ -142,7 +151,10 @@ export default function App() {
         {view === 'queue' && (
           <ApplicationsView
             initialApplicationId={jumpApplicationId}
-            onConsumedInitialApplication={() => setJumpApplicationId(null)}
+            onConsumedInitialApplication={() => {
+              setJumpApplicationId(null);
+              if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
+            }}
           />
         )}
         {view === 'chats' && <ConversationsView onOpenApplication={openApplication} />}

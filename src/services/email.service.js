@@ -24,7 +24,7 @@ const notificationSettings = require('./notificationSettings.service');
 const MAILJET_URL = 'https://api.mailjet.com/v3.1/send';
 const TIMEOUT_MS = 12000;
 
-const BRAND = '#0f5c4d';
+const BRAND = '#E96A18'; // Soledd brand orange
 const MUTED = '#7a8481';
 
 function isConfigured() {
@@ -97,9 +97,11 @@ function pill(text, color = 'grey') {
 
 /** Layout shared by every email: heading, body, optional dashboard button. */
 function layout(heading, bodyHtml, { button, badge, banner } = {}) {
+  // button: { label, query } - links to the dashboard, with `query` (e.g.
+  // "?application=<id>") so the dashboard opens straight to that record.
   const url = dashboardUrl();
   const cta = button && url
-    ? `<p style="margin:26px 0 0"><a href="${esc(url)}" style="background:${BRAND};color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;display:inline-block">${esc(button)}</a></p>`
+    ? `<p style="margin:26px 0 0"><a href="${esc(`${url}/${button.query || ''}`)}" style="background:${BRAND};color:#fff;text-decoration:none;padding:11px 20px;border-radius:6px;font-weight:700;display:inline-block">${esc(button.label)}</a></p>`
     : '';
   const bannerHtml = banner
     ? `<div style="background:#fdf1d9;color:#8a5a07;border-radius:6px;padding:8px 12px;font-size:12.5px;margin:0 0 18px">${esc(banner)}</div>`
@@ -163,8 +165,23 @@ function appRows(app) {
     ['Period', app.repayment_months ? `${app.repayment_months} months` : ''],
     ['Employer', app.employer_name],
     ['Phone', app.applicant_phone],
+    ['Field agent', app._agent],
   ];
 }
+
+/** Adds app._agent = "Name (+263...)" for applications referred by a field agent. */
+async function withAgent(app) {
+  if (!app || !app.agent_phone) return app;
+  let name = '';
+  try {
+    const { data } = await supabase.from('agents').select('name').eq('phone_number', app.agent_phone).maybeSingle();
+    name = data?.name || '';
+  } catch (_) { /* fall back to the number */ }
+  return { ...app, _agent: name ? `${name} (${app.agent_phone})` : app.agent_phone };
+}
+
+const appLink = app => ({ label: 'Open application', query: app?.id ? `?application=${encodeURIComponent(app.id)}` : '' });
+const agentsLink = { label: 'Open field agents', query: '?view=agents' };
 
 const RENDER = {
   newApplication(app) {
@@ -173,14 +190,12 @@ const RENDER = {
       subject: `New loan application ${ref}`,
       heading: `New loan application ${ref}`,
       badge: pill('NEW APPLICATION', 'blue'),
-      body: `<p>A customer has just applied on WhatsApp.</p>` + detailTable([
-        ...appRows(app).filter(([k]) => k !== 'Reference'),
-        ['Via field agent', app.agent_phone],
-      ]),
+      body: `<p>A customer has just applied on WhatsApp.</p>` + detailTable(appRows(app).filter(([k]) => k !== 'Reference')),
+      link: appLink(app),
     };
   },
 
-  documentsReceived({ referenceNumber, agentApplication, name, phone }) {
+  documentsReceived({ applicationId, referenceNumber, agentApplication, name, phone }) {
     const what = agentApplication ? 'field agent application' : `application ${referenceNumber || ''}`.trim();
     return {
       subject: `Documents received for ${what}`,
@@ -191,6 +206,7 @@ const RENDER = {
         ['Applicant', name],
         ['Phone', phone],
       ]),
+      link: agentApplication ? agentsLink : { label: 'Open application', query: applicationId ? `?application=${encodeURIComponent(applicationId)}` : '' },
     };
   },
 
@@ -205,6 +221,7 @@ const RENDER = {
         [approved ? 'Approved by' : 'Rejected by', actor],
         ['Note', note],
       ]),
+      link: appLink(app),
     };
   },
 
@@ -218,6 +235,7 @@ const RENDER = {
         ['Changed by', actor],
         ...appRows(app).filter(([k]) => k !== 'Reference'),
       ]),
+      link: appLink(app),
     };
   },
 
@@ -231,6 +249,7 @@ const RENDER = {
         ['Area', app.area],
         ['Phone', app.applicant_phone],
       ]),
+      link: agentsLink,
     };
   },
 
@@ -246,6 +265,7 @@ const RENDER = {
         ['Phone', app.applicant_phone],
         [approved ? 'Approved by' : 'Rejected by', actor],
       ]),
+      link: agentsLink,
     };
   },
 };
@@ -282,11 +302,11 @@ async function notifyStaff(event, content, { excludeEmail } = {}) {
   return sendMail({
     to,
     subject: content.subject,
-    html: layout(content.heading, content.body, { button: 'Open dashboard', badge: content.badge }),
+    html: layout(content.heading, content.body, { button: content.link || { label: 'Open dashboard' }, badge: content.badge }),
   });
 }
 
-const notifyNewApplication = app => notifyStaff('newApplication', RENDER.newApplication(app));
+const notifyNewApplication = async app => notifyStaff('newApplication', RENDER.newApplication(await withAgent(app)));
 const notifyNewAgentApplication = app => notifyStaff('newAgentApplication', RENDER.newAgentApplication(app));
 
 async function notifyDocumentsReceived({ applicationId, agentApplicationId, referenceNumber }) {
@@ -302,18 +322,20 @@ async function notifyDocumentsReceived({ applicationId, agentApplicationId, refe
     name = data?.full_name || '';
     phone = data?.applicant_phone || '';
   } catch (_) { /* details are a nicety - send the email regardless */ }
-  return notifyStaff('documentsReceived', RENDER.documentsReceived({ referenceNumber, agentApplication, name, phone }));
+  return notifyStaff('documentsReceived', RENDER.documentsReceived({ applicationId, referenceNumber, agentApplication, name, phone }));
 }
 
 /** Approved / rejected -> decision email; moved back to review -> "changed". */
-function notifyApplicationStatus(app, status, { note, actor } = {}) {
+async function notifyApplicationStatus(rawApp, status, { note, actor } = {}) {
+  const app = await withAgent(rawApp);
   if (status === 'APPROVED' || status === 'REJECTED') {
     return notifyStaff('applicationDecision', RENDER.applicationDecision(app, status, { note, actor: actor?.name }), { excludeEmail: actor?.email });
   }
   return notifyStaff('applicationChanged', RENDER.applicationChanged(app, 'Moved back to In Review', { actor: actor?.name }), { excludeEmail: actor?.email });
 }
 
-function notifyApplicationChanged(app, summary, actor) {
+async function notifyApplicationChanged(rawApp, summary, actor) {
+  const app = await withAgent(rawApp);
   return notifyStaff('applicationChanged', RENDER.applicationChanged(app, summary, { actor: actor?.name }), { excludeEmail: actor?.email });
 }
 
@@ -337,11 +359,13 @@ const SAMPLE_APP = {
   employer_name: 'Ministry of Education',
   applicant_phone: '+263771234567',
   agent_phone: '+263712345678',
+  _agent: 'Chipo Dube (+263712345678)',
+  id: 'sample-id',
 };
 
 function sampleEmails() {
   const actor = { name: 'Rudo Chikwanha' };
-  const c = (label, content) => ({ label, subject: content.subject, html: layout(content.heading, content.body, { button: 'Open dashboard', badge: content.badge, banner: 'TEST EMAIL - sample data only, nothing real happened.' }) });
+  const c = (label, content) => ({ label, subject: content.subject, html: layout(content.heading, content.body, { button: content.link, badge: content.badge, banner: 'TEST EMAIL - sample data only, nothing real happened.' }) });
   const agentApp = { full_name: 'Farai Ncube', area: 'Bulawayo', applicant_phone: '+263773456789' };
   return [
     c('New loan application', RENDER.newApplication(SAMPLE_APP)),

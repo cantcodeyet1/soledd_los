@@ -143,7 +143,7 @@ function renderSummary(data, now) {
 
   return {
     subject: `Soledd weekly summary: ${data.created.length} new, ${approved.length} approved, ${data.review.length} awaiting review`,
-    html: email.layout('Weekly activity summary', body, { button: 'Open dashboard', badge: email.pill('WEEKLY SUMMARY', 'blue') }),
+    html: email.layout('Weekly activity summary', body, { button: { label: 'Open dashboard' }, badge: email.pill('WEEKLY SUMMARY', 'blue') }),
   };
 }
 
