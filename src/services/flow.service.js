@@ -12,6 +12,7 @@ const { supabase } = require('../models/supabase');
 const whatsappService = require('./whatsapp.service');
 const completionForms = require('./completionForms.service');
 const documentStorage = require('./documentStorage.service');
+const emailService = require('./email.service');
 
 const mainFlow = require('../flows/mainFlow');
 const agentFlow = require('../flows/agentFlow');
@@ -270,6 +271,7 @@ async function createApplication(customerPhone, appData) {
   }]).then(({ error: e }) => e && console.error('[FLOW] activity log:', e.message));
 
   console.log(`[FLOW] Application created: ${inserted.reference_number} (${inserted.category})`);
+  emailService.background(emailService.notifyNewApplication(inserted));
   return inserted;
 }
 
@@ -291,6 +293,7 @@ async function createAgentApplication(customerPhone, agentData) {
   }
 
   console.log(`[FLOW] Agent application created for ${customerPhone}`);
+  emailService.background(emailService.notifyNewAgentApplication(inserted));
   return inserted;
 }
 

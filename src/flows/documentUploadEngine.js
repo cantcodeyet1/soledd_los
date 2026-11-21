@@ -9,6 +9,7 @@
 
 const { REQUIRED_DOCUMENTS } = require('./requiredDocuments');
 const documentStorage = require('../services/documentStorage.service');
+const emailService = require('../services/email.service');
 
 const RETURN_BUTTON = { id: 'RETURN_MENU', title: '🔙 Main Menu' };
 
@@ -79,6 +80,11 @@ function advance(docs, flowData, isAgentApplication, prefix = null) {
   const nextIndex = flowData.docIndex + 1;
 
   if (nextIndex >= docs.length) {
+    emailService.background(emailService.notifyDocumentsReceived({
+      applicationId: flowData.applicationId,
+      agentApplicationId: flowData.agentApplicationId,
+      referenceNumber: flowData.referenceNumber,
+    }));
     const messages = [];
     if (prefix) messages.push({ type: 'text', body: prefix });
     const completionBody = isAgentApplication
