@@ -19,6 +19,8 @@ const documentStorage = require('../services/documentStorage.service');
 const settingsService = require('../services/settings.service');
 const officerAuth = require('../services/officerAuth.service');
 const emailService = require('../services/email.service');
+const notificationSettings = require('../services/notificationSettings.service');
+const weeklySummary = require('../services/weeklySummary.service');
 const { getEffectivePassword, requireAdmin } = require('../middleware/auth');
 
 // ─── Activity timeline ──────────────────────────────────────────────────────
@@ -167,6 +169,7 @@ router.patch('/applications/:id/status', async (req, res) => {
 
     const label = status === 'APPROVED' ? 'Approved' : status === 'REJECTED' ? 'Rejected' : 'Moved back to In Review';
     await logActivity(req.params.id, 'STATUS_CHANGED', `${label}${note ? ` — ${note}` : ''}`, { status, note: note || null }, req);
+    emailService.background(emailService.notifyApplicationStatus(application, status, { note, actor: req.user }));
 
     res.json({ application, notificationMessage: message, notified: !!(message && notify) });
   } catch (err) {
@@ -213,6 +216,7 @@ router.patch('/applications/:id/loan-terms', async (req, res) => {
       req.params.id, 'LOAN_TERMS_UPDATED', 'Loan terms updated',
       { loan_product, borrower_type, disbursement_date }, req,
     );
+    emailService.background(emailService.notifyApplicationChanged(application, 'Loan terms updated', req.user));
     res.json({ application });
   } catch (err) {
     console.error('PATCH /applications/:id/loan-terms error:', err.message);
@@ -264,6 +268,7 @@ router.patch('/applications/:id/details', async (req, res) => {
 
     const changed = Object.keys(updates).filter(k => k !== 'updated_at');
     await logActivity(req.params.id, 'DETAILS_EDITED', `Edited: ${changed.join(', ')}`, { fields: changed }, req);
+    emailService.background(emailService.notifyApplicationChanged(application, `Edited: ${changed.join(', ')}`, req.user));
 
     res.json({ application });
   } catch (err) {
@@ -598,6 +603,46 @@ router.put('/settings/lms-postings', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Email notification settings ────────────────────────────────────────────
+
+router.get('/settings/notifications', requireAdmin, async (req, res) => {
+  try {
+    res.json({
+      settings: await notificationSettings.getNotificationSettings(),
+      eventLabels: notificationSettings.EVENT_LABELS,
+      timezone: notificationSettings.TIMEZONE,
+      emailConfigured: emailService.isConfigured(),
+      sender: process.env.EMAIL_FROM || null,
+      recipients: await emailService.staffRecipients(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/settings/notifications', requireAdmin, async (req, res) => {
+  try {
+    res.json({ settings: await notificationSettings.saveNotificationSettings(req.body) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sends one of every email type (sample data + this week's real summary) to
+// a single address so the layouts can be checked without touching real data.
+router.post('/settings/notifications/test', requireAdmin, async (req, res) => {
+  try {
+    const to = String(req.body?.to || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return res.status(400).json({ error: 'A valid email address is required' });
+    if (!emailService.isConfigured()) return res.status(400).json({ error: 'Email is not configured on the server yet (Mailjet keys missing)' });
+    const summary = await weeklySummary.buildSummary();
+    const results = await emailService.sendTestEmails(to, [{ label: 'Weekly summary', ...summary }]);
+    res.json({ results, sent: results.filter(r => r.sent).length, total: results.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Loan Calculator ────────────────────────────────────────────────────────
 
 router.get('/calculator/rates', requireAdmin, async (req, res) => {
@@ -804,6 +849,7 @@ router.patch('/agent-applications/:id/status', async (req, res) => {
     }
     const application = await agentService.decideAgentApplication(req.params.id, status, note);
     if (!application) return res.status(404).json({ error: 'Not found' });
+    emailService.background(emailService.notifyAgentDecision(application, status, req.user));
 
     // On approval, hand the dashboard the activation code + a ready-to-send
     // WhatsApp message (sent from the officer's number) so it can open a

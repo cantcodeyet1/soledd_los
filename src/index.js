@@ -8,6 +8,7 @@ const adminRoutes = require('./routes/admin.routes');
 const authRoutes = require('./routes/auth.routes');
 const { authenticate } = require('./middleware/auth');
 const keepAlive = require('./services/keepAlive.service');
+const weeklySummary = require('./services/weeklySummary.service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,6 +71,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`\nSoledd LOS WhatsApp Bot running on http://localhost:${PORT}\n`);
     keepAlive.start();
+    weeklySummary.start();
   });
 }
 

@@ -3,7 +3,7 @@ import { requestJson, resetOwnPassword } from '../services/api';
 import { AuthUser, CalculatorConfig, LoanProduct, LOAN_PRODUCT_LABELS, Officer, UserRole } from '../types';
 import Dropdown from './Dropdown';
 
-type SettingsTab = 'account' | 'loan' | 'team';
+type SettingsTab = 'account' | 'loan' | 'team' | 'notifications';
 
 export default function ProfileView({ user, displayName, onDisplayNameChange, onReplayTour }: {
   user: AuthUser;
@@ -16,7 +16,7 @@ export default function ProfileView({ user, displayName, onDisplayNameChange, on
 
   const TABS: { id: SettingsTab; label: string }[] = [
     { id: 'account', label: 'Account' },
-    ...(isAdmin ? [{ id: 'loan' as const, label: 'Loan Settings' }, { id: 'team' as const, label: 'Team' }] : []),
+    ...(isAdmin ? [{ id: 'loan' as const, label: 'Loan Settings' }, { id: 'team' as const, label: 'Team' }, { id: 'notifications' as const, label: 'Notifications' }] : []),
   ];
   const [tab, setTab] = useState<SettingsTab>('account');
 
@@ -69,6 +69,8 @@ export default function ProfileView({ user, displayName, onDisplayNameChange, on
         </div>
       )}
 
+      {tab === 'notifications' && isAdmin && <NotificationsCard />}
+
       {tab === 'team' && isAdmin && (
         <div className="flex flex-col gap-6">
           <AgentCommissionCard />
@@ -104,6 +106,161 @@ function AccountNameCard({ displayName, onDisplayNameChange }: { displayName: st
         </button>
       </form>
       <div className="text-xs text-text-dim mt-2.5">Shown as your initials in the top-right corner of the dashboard.</div>
+    </div>
+  );
+}
+
+interface NotificationConfig {
+  weeklySummary: { enabled: boolean; day: number; time: string };
+  events: Record<string, boolean>;
+}
+interface NotificationInfo {
+  settings: NotificationConfig;
+  eventLabels: Record<string, string>;
+  timezone: string;
+  emailConfigured: boolean;
+  sender: string | null;
+  recipients: string[];
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} aria-label={label}
+      onClick={() => onChange(!on)}
+      className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-solid' : 'bg-rule'}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : ''}`} />
+    </button>
+  );
+}
+
+function NotificationsCard() {
+  const [info, setInfo] = useState<NotificationInfo | null>(null);
+  const [cfg, setCfg] = useState<NotificationConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  const [testTo, setTestTo] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState('');
+
+  useEffect(() => {
+    requestJson('/settings/notifications')
+      .then((r: NotificationInfo) => { setInfo(r); setCfg(r.settings); })
+      .catch(e => setError(e.message));
+  }, []);
+
+  async function save() {
+    if (!cfg) return;
+    setSaving(true); setError('');
+    try {
+      const r = await requestJson('/settings/notifications', { method: 'PUT', body: JSON.stringify(cfg) });
+      setCfg(r.settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendTest() {
+    setTesting(true); setTestResult(''); setError('');
+    try {
+      const r = await requestJson('/settings/notifications/test', { method: 'POST', body: JSON.stringify({ to: testTo }) });
+      setTestResult(`Sent ${r.sent} of ${r.total} test emails to ${testTo}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send test emails');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (!cfg || !info) return error ? <div className="text-sm text-red-600">{error}</div> : null;
+
+  const ws = cfg.weeklySummary;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {!info.emailConfigured && (
+        <div className="border border-warn/40 bg-warn-bg text-warn text-xs font-semibold rounded-xl px-4 py-3">
+          Email isn't configured on the server yet. Add the Mailjet keys to the backend environment, then emails will start sending.
+        </div>
+      )}
+
+      <div className="border border-rule rounded-2xl p-6 bg-paper">
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <h2 className="font-display font-bold text-base">Weekly summary</h2>
+          <Toggle on={ws.enabled} onChange={v => setCfg({ ...cfg, weeklySummary: { ...ws, enabled: v } })} label="Weekly summary" />
+        </div>
+        <div className="text-xs text-text-dim mb-4">
+          New applications, decisions, what's still waiting for review, and field agent activity for the past 7 days.
+        </div>
+        <div className={`grid grid-cols-2 gap-2.5 max-w-sm ${ws.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+          <Dropdown
+            label="Day"
+            value={String(ws.day)}
+            options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))}
+            onChange={v => setCfg({ ...cfg, weeklySummary: { ...ws, day: Number(v) } })}
+          />
+          <div>
+            <label className="block text-[10.5px] text-text-dim mb-1">Time</label>
+            <input
+              type="time" value={ws.time}
+              onChange={e => e.target.value && setCfg({ ...cfg, weeklySummary: { ...ws, time: e.target.value } })}
+              className="w-full border border-rule rounded-lg px-3 py-2.5 text-sm bg-card"
+            />
+          </div>
+        </div>
+        <div className="text-[11px] text-text-dim mt-2">All times are {info.timezone.replace('_', ' ')} (Zimbabwe time).</div>
+      </div>
+
+      <div className="border border-rule rounded-2xl p-6 bg-paper">
+        <h2 className="font-display font-bold text-base mb-1">Email me when…</h2>
+        <div className="text-xs text-text-dim mb-4">
+          Sent to every active credit officer{info.sender ? <> from <span className="font-semibold">{info.sender}</span></> : null}.
+          You're not emailed about changes you make yourself.
+        </div>
+        <div className="flex flex-col divide-y divide-rule">
+          {Object.entries(info.eventLabels).map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between gap-4 py-3">
+              <span className="text-sm">{label}</span>
+              <Toggle on={cfg.events[key] !== false} onChange={v => setCfg({ ...cfg, events: { ...cfg.events, [key]: v } })} label={label} />
+            </div>
+          ))}
+        </div>
+        <div className="text-[11px] text-text-dim mt-3">
+          {info.recipients.length} recipient{info.recipients.length === 1 ? '' : 's'} right now: {info.recipients.join(', ') || 'none (add an email to a credit officer)'}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={saving} className="bg-solid hover:bg-solid-hover text-white text-sm font-semibold px-5 py-2.5 rounded-lg disabled:opacity-60">
+          {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save notification settings'}
+        </button>
+        {error && <span className="text-xs text-red-600">{error}</span>}
+      </div>
+
+      <div className="border border-rule rounded-2xl p-6 bg-paper">
+        <h2 className="font-display font-bold text-base mb-1">Send test emails</h2>
+        <div className="text-xs text-text-dim mb-4">
+          Sends one of every email type (with sample data, plus this week's real summary) so you can see how they look.
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="email" value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="you@example.com"
+            className="flex-1 border border-rule rounded-lg px-3.5 py-2.5 text-sm bg-card focus:outline-none focus:border-accent"
+          />
+          <button onClick={sendTest} disabled={testing || !testTo} className="border border-rule text-sm font-semibold px-4 py-2.5 rounded-lg hover:border-ink disabled:opacity-60 whitespace-nowrap">
+            {testing ? 'Sending…' : 'Send test emails'}
+          </button>
+        </div>
+        {testResult && <div className="text-xs text-text-dim mt-2.5">{testResult}</div>}
+      </div>
     </div>
   );
 }
